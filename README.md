@@ -1,103 +1,169 @@
-# Project Title
+# Skeleton Extraction from Video
 
-**Author:** [Nazar Mykhailyshchuk](www.github.com/partum55)  
-**Group:** [Your Group]  
-**Course:** [Course Name]  
-**Assignment:** [Assignment Number/Name]  
-**Date:** [Date]
+**Authors:** [Nazar Mykhailyshchuk](https://www.github.com/partum55), [Oleksii Lasiichuk](https://www.github.com/Oleksii-Lasiichuk)
+**Group:** АІ-2
+**Course:** Linear Algebra
+**Assignment:** LA Project — Robust Skeleton Extraction Methods in Computer Vision
+**Date:** March 2026
 
 ## Description
 
-Brief description of what this project does and what problem it solves.
+A real-time computer vision system that extracts human skeletons from video and uses linear algebra to detect exercises (squats, push-ups, jumping jacks) and count repetitions. The pipeline goes from raw pixels (a 4th-order tensor) through pose estimation, affine normalization, and joint angle computation (via the inner product) to rule-based classification with peak detection.
+
+Every computational step maps directly to linear algebra concepts: vectors in $\mathbb{R}^2$, matrices, linear and affine transformations, rotation matrices, the dot product, norms, and the cosine angle formula.
 
 ## Requirements
 
-- Python 3.12
+- Python 3.10+
 - pip (Python package installer)
 - Virtual environment (recommended)
+- A webcam (built-in laptop camera works fine)
 
 ## Installation
 
 ```bash
-# Clone the repository (if applicable)
-git clone [repository-url]
-cd [project-name]
+# clone the repository
+git clone https://github.com/partum55/skeleton-from-video.git
+cd skeleton-from-video
 
-# Create virtual environment
-python -m venv venv
+# create virtual environment
+python3 -m venv venv
 
-# Activate virtual environment
+# activate virtual environment
+# macOS / Linux:
+source venv/bin/activate
 # Windows:
 venv\Scripts\activate
-# Linux/Mac:
-source venv/bin/activate
 
-# Install dependencies
+# install dependencies
 pip install -r requirements.txt
 ```
 
 ## Usage
 
-### Running the Program
+### Live Mode (webcam — real-time exercise detection)
 
 ```bash
-python src/main.py
+python -m src.main --source 0 --mode live
 ```
 
-### Command Line Arguments
+This opens your webcam, draws the skeleton overlay, detects the exercise, and counts reps in real-time.
+
+**Controls:**
+- `q` — quit
+- `r` — reset rep counter
+
+### Live Mode with a video file
 
 ```bash
-# Example with arguments
-python src/main.py --input data.txt --output result.txt
-
-# Show help
-python src/main.py --help
+python -m src.main --source path/to/video.mp4 --mode live
 ```
 
-### Examples
+### Analyze Mode (offline skeleton extraction)
 
-```python
-# Example 1: Basic usage
-python src/main.py
+```bash
+python -m src.main --source path/to/video.mp4 --mode analyze --output skeletons.npy
+```
 
-# Example 2: With custom parameters
-python src/main.py --param1 value1 --param2 value2
+Extracts all skeleton data from a video and saves it as a NumPy array.
+
+### Additional flags
+
+```bash
+python -m src.main --source 0 --no-angles    # hide angle overlay
+python -m src.main --source 0 --no-plot       # hide angle-vs-time plot
+python -m src.main --source 0 --rotate        # apply rotation normalization
 ```
 
 ## Project Structure
 
 ```
-project-name/
+skeleton-from-video/
 ├── src/
-│   ├── main.py          # Main entry point
-│   ├── module1.py       # Additional modules
-│   └── utils.py         # Utility functions
+│   ├── __init__.py        # package marker
+│   ├── main.py            # main entry point — video loop, pipeline orchestration
+│   ├── skeleton.py        # mediapipe pose estimation, adjacency matrix, graph laplacian
+│   ├── normalize.py       # affine normalization: translation, scaling, rotation
+│   ├── features.py        # joint angles (dot product), velocity, distance metrics
+│   ├── classify.py        # rule-based exercise classification + rep counting
+│   └── visualize.py       # skeleton drawing, info overlay, angle plots
 ├── tests/
-│   ├── __init__.py      # Makes tests a package
-│   ├── test_main.py     # Unit tests for main
-│   └── test_utils.py    # Unit tests for utils
-├── data/                # Input/output data
-├── docs/                # Documentation
-├── requirements.txt     # Python dependencies
-├── .gitignore
+│   └── test_main.py       # 34 unit tests covering all modules
+├── requirements.txt       # python dependencies
+├── must_read_la.md        # detailed mapping of LA concepts to code
+├── LICENSE
 └── README.md
+```
+
+## Pipeline
+
+```
+Video (V ∈ R^{T×H×W×3})
+    ↓
+Pose Estimation (MediaPipe) → S(t) ∈ R^{33×2}
+    ↓
+Normalization: q = (1/d_ref) · R(α) · (p - c)
+    ↓
+Joint Angles: θ = arccos(⟨u,v⟩ / (‖u‖·‖v‖))
+    ↓
+Classification (angle thresholds + peak detection)
+    ↓
+Output: exercise name + rep count
 ```
 
 ## Features
 
-- Feature 1: Description
-- Feature 2: Description
-- Feature 3: Description
+- Real-time skeleton extraction at ~30 FPS using MediaPipe
+- Affine normalization (translation, scaling, rotation) for camera-invariant detection
+- Joint angle computation using the inner product cosine formula
+- Rule-based classification for squats, push-ups, and jumping jacks
+- Automatic repetition counting via peak detection (scipy)
+- Live angle-vs-time plot embedded in the video window
+- Offline analysis mode with skeleton data export to `.npy`
+
+## Video Demo Approach
+
+For the project video demonstration, we use the laptop's built-in webcam directly:
+
+1. Run the program: `python -m src.main --source 0`
+2. Stand in front of the laptop camera and perform exercises
+3. The program shows the skeleton overlay, detected exercise, rep count, and angle plot in real time
+4. Record the screen using macOS screen recording (Cmd+Shift+5) or OBS
+
+This captures both the code output and the live exercise detection in a single recording.
 
 ## Dependencies
 
-Main libraries used:
-- `unittest` - built-in testing framework
-- `example1` - for numerical computations
-- `example2` - for data manipulation
-- `example3` - for visualization
+| Library | Purpose |
+|---|---|
+| `mediapipe` | Pose estimation — extracts 33 keypoints from each frame |
+| `opencv-python` | Video capture, frame processing, drawing |
+| `numpy` | All matrix/vector operations — the LA backbone |
+| `scipy` | Peak detection for repetition counting |
+| `matplotlib` | Visualization and plotting |
+| `pytest` | Unit testing framework |
 
 ## Testing
+
+```bash
+# run all tests
+python -m pytest tests/test_main.py -v
+
+# run a specific test class
+python -m pytest tests/test_main.py::TestGraphLaplacian -v
+```
+
+34 tests covering:
+- Adjacency matrix properties (symmetry, binary, zero diagonal)
+- Graph Laplacian properties (PSD, zero eigenvalue, row sums)
+- Normalization (centering, scaling, rotation orthogonality)
+- Angle computation (0°, 45°, 90°, 180°)
+- Distance metrics (Euclidean, cosine similarity)
+- Classifier state management and exercise detection
+
+## License
+
+See [LICENSE](LICENSE) for details.
 
 Run tests using unittest:
 
