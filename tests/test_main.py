@@ -56,6 +56,46 @@ def _make_skeleton(seed=42) -> np.ndarray:
     return skeleton
 
 
+def _standing_angles() -> dict[str, float]:
+    """angles for a neutral standing position — should NOT trigger any exercise."""
+    return {
+        "left_knee": 170, "right_knee": 170,
+        "left_elbow": 165, "right_elbow": 165,
+        "left_shoulder": 30, "right_shoulder": 30,
+        "left_hip": 170, "right_hip": 170,
+    }
+
+
+def _squat_down_angles() -> dict[str, float]:
+    """angles for the bottom of a squat."""
+    return {
+        "left_knee": 75, "right_knee": 75,
+        "left_elbow": 165, "right_elbow": 165,
+        "left_shoulder": 35, "right_shoulder": 35,
+        "left_hip": 85, "right_hip": 85,
+    }
+
+
+def _pushup_down_angles() -> dict[str, float]:
+    """angles for the bottom of a pushup."""
+    return {
+        "left_knee": 170, "right_knee": 170,
+        "left_elbow": 75, "right_elbow": 75,
+        "left_shoulder": 50, "right_shoulder": 50,
+        "left_hip": 140, "right_hip": 140,
+    }
+
+
+def _jj_up_angles() -> dict[str, float]:
+    """angles for jumping jack with arms up."""
+    return {
+        "left_knee": 170, "right_knee": 170,
+        "left_elbow": 165, "right_elbow": 165,
+        "left_shoulder": 150, "right_shoulder": 150,
+        "left_hip": 170, "right_hip": 170,
+    }
+
+
 # --- adjacency matrix tests ---
 
 class TestAdjacencyMatrix:
@@ -270,29 +310,77 @@ class TestClassifier:
         assert clf.current_exercise is None
         assert clf.rep_count == 0
 
-    def test_squat_detection(self):
+    def test_standing_stays_idle(self):
+        """standing still should never trigger an exercise."""
         clf = ExerciseClassifier()
-        # simulate squat sequence: standing -> squat -> standing repeated
-        for cycle in range(3):
+        for _ in range(50):
+            exercise, reps = clf.update(_standing_angles())
+        assert clf.current_exercise is None
+        assert clf.rep_count == 0
+
+    def test_squat_detection(self):
+        """squat cycle (standing -> deep squat -> standing) should be detected."""
+        clf = ExerciseClassifier()
+        # feed enough squat-down frames to pass the confidence gate
+        for _ in range(30):
+            clf.update(_squat_down_angles())
+        assert clf.current_exercise == "squat"
+
+    def test_squat_reps(self):
+        """full squat cycles should produce rep counts."""
+        clf = ExerciseClassifier()
+        for cycle in range(4):
             # standing phase
             for _ in range(20):
-                angles = {
+                clf.update({
                     "left_knee": 170, "right_knee": 170,
-                    "left_elbow": 170, "right_elbow": 170,
+                    "left_elbow": 165, "right_elbow": 165,
                     "left_shoulder": 30, "right_shoulder": 30,
                     "left_hip": 170, "right_hip": 170,
-                }
-                clf.update(angles)
+                })
             # squat phase
             for _ in range(20):
-                angles = {
-                    "left_knee": 80, "right_knee": 80,
-                    "left_elbow": 170, "right_elbow": 170,
-                    "left_shoulder": 30, "right_shoulder": 30,
-                    "left_hip": 90, "right_hip": 90,
-                }
-                clf.update(angles)
+                clf.update(_squat_down_angles())
         assert clf.current_exercise == "squat"
+        # at least 1 rep should be counted from the oscillation
+        assert clf.rep_count >= 1
+
+    def test_pushup_detection(self):
+        """pushup down position should be detected after confidence frames."""
+        clf = ExerciseClassifier()
+        for _ in range(30):
+            clf.update(_pushup_down_angles())
+        assert clf.current_exercise == "pushup"
+
+    def test_jumping_jack_detection(self):
+        """jumping jack arms-up should be detected after confidence frames."""
+        clf = ExerciseClassifier()
+        for _ in range(30):
+            clf.update(_jj_up_angles())
+        assert clf.current_exercise == "jumping_jack"
+
+    def test_idle_after_sustained_standing(self):
+        """exercise should drop to idle after enough standing frames."""
+        clf = ExerciseClassifier()
+        # first detect a squat
+        for _ in range(30):
+            clf.update(_squat_down_angles())
+        assert clf.current_exercise == "squat"
+
+        # now stand for a long time
+        for _ in range(50):
+            clf.update(_standing_angles())
+        assert clf.current_exercise is None
+
+    def test_no_false_trigger_slight_bend(self):
+        """slightly bent knees (like casual standing) should not trigger squat."""
+        clf = ExerciseClassifier()
+        slightly_bent = _standing_angles()
+        slightly_bent["left_knee"] = 155
+        slightly_bent["right_knee"] = 155
+        for _ in range(50):
+            clf.update(slightly_bent)
+        assert clf.current_exercise is None
 
     def test_count_reps_from_signal(self):
         # create a sinusoidal signal mimicking squat angle oscillation
