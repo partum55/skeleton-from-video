@@ -38,6 +38,9 @@ def draw_skeleton(frame: np.ndarray, landmarks: np.ndarray,
     landmarks: (33, 2) or (33, 3) with x, y in [0, 1].
     """
     h, w = frame.shape[:2]
+    scale = max(1.0, min(h, w) / 720.0)
+    joint_radius = max(4, int(round(joint_radius * scale)))
+    bone_thickness = max(2, int(round(bone_thickness * scale)))
     out = frame.copy()
 
     points: list[tuple[int, int]] = []

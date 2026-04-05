@@ -102,7 +102,12 @@ class ExerciseClassifier:
     @staticmethod
     def _detect_exercise(knee: float, elbow: float, shoulder: float, hip: float) -> str | None:
         squat_active = knee < 120 and hip < 140
-        pushup_active = elbow < 120 and hip < 150
+        pushup_active = (
+            elbow < 120
+            and hip > 135
+            and knee > 140
+            and 20 < shoulder < 130
+        )
         jj_active = shoulder > 90
 
         if squat_active and not pushup_active and not jj_active:

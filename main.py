@@ -41,7 +41,10 @@ def _signal_handler(signum, frame):
 
 
 def run_live(source: int | str = 0, show_angles: bool = True,
-             show_plot: bool = True, apply_rotation: bool = False):
+             show_plot: bool = True, apply_rotation: bool = False,
+             frame_width: int = 1280, frame_height: int = 720,
+             window_width: int = 1600, window_height: int = 900,
+             mirror: bool = True):
     """run the full pipeline on a live webcam or video file.
 
     pipeline: video -> skeleton extraction -> normalization -> angles -> classify -> visualize
@@ -58,9 +61,17 @@ def run_live(source: int | str = 0, show_angles: bool = True,
         signal.signal(signal.SIGINT, prev_handler)
         return
 
-    estimator = PoseEstimator()
+    cap.set(cv2.CAP_PROP_FRAME_WIDTH, float(max(320, frame_width)))
+    cap.set(cv2.CAP_PROP_FRAME_HEIGHT, float(max(240, frame_height)))
+
+    window_name = "Skeleton Extraction from Video"
+    cv2.namedWindow(window_name, cv2.WINDOW_NORMAL | cv2.WINDOW_GUI_EXPANDED)
+    cv2.resizeWindow(window_name, max(640, window_width), max(480, window_height))
+    is_fullscreen = False
+
+    estimator = PoseEstimator(min_detection_confidence=0.6, min_tracking_confidence=0.6)
     classifier = ExerciseClassifier(default_fps=30.0)
-    landmarks_filter = LandmarksTemporalFilter(min_visibility=0.5, ema_alpha=0.35)
+    landmarks_filter = LandmarksTemporalFilter(min_visibility=0.3, ema_alpha=0.35)
     normalized_filter = NormalizedSkeletonTemporalFilter(alpha=0.40)
     angle_smoother = AngleTemporalSmoother(alpha=0.45)
 
@@ -89,10 +100,17 @@ def run_live(source: int | str = 0, show_angles: bool = True,
     prev_pca_reps: int = 0
     rep_flash_frames: int = 0   # counts down; >0 means flash is active
 
-    print("press 'q' to quit, 'r' to reset rep counter")
+    print("press 'q' to quit, 'r' to reset rep counter, 'f' to toggle fullscreen")
 
     try:
         while not _shutdown_requested:
+            # stop immediately if user closed the window via window controls (X button)
+            try:
+                if cv2.getWindowProperty(window_name, cv2.WND_PROP_VISIBLE) < 1:
+                    break
+            except cv2.error:
+                break
+
             ret, frame = cap.read()
             if not ret:
                 # loop video files
@@ -100,6 +118,9 @@ def run_live(source: int | str = 0, show_angles: bool = True,
                     cap.set(cv2.CAP_PROP_POS_FRAMES, 0)
                     continue
                 break
+
+            if mirror:
+                frame = cv2.flip(frame, 1)
 
             frame_rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
             landmarks = estimator.extract_landmarks(frame_rgb)
@@ -201,7 +222,7 @@ def run_live(source: int | str = 0, show_angles: bool = True,
                 if y_start + ph < fh and x_start > 0:
                     frame[y_start:y_start + ph, x_start:x_start + pw] = plot_img
 
-            cv2.imshow("Skeleton Extraction from Video", frame)
+            cv2.imshow(window_name, frame)
 
             key = cv2.waitKey(1) & 0xFF
             if key == ord("q"):
@@ -222,6 +243,13 @@ def run_live(source: int | str = 0, show_angles: bool = True,
                 prev_pca_reps = 0
                 rep_flash_frames = 0
                 print("reset rep counter")
+            elif key == ord("f"):
+                is_fullscreen = not is_fullscreen
+                cv2.setWindowProperty(
+                    window_name,
+                    cv2.WND_PROP_FULLSCREEN,
+                    cv2.WINDOW_FULLSCREEN if is_fullscreen else cv2.WINDOW_NORMAL,
+                )
 
     finally:
         # always clean up, even on Ctrl+C or exception
@@ -313,6 +341,26 @@ def main():
         "--rotate", action="store_true",
         help="apply rotation normalization"
     )
+    parser.add_argument(
+        "--frame-width", type=int, default=1280,
+        help="capture frame width (camera/video decode target)"
+    )
+    parser.add_argument(
+        "--frame-height", type=int, default=720,
+        help="capture frame height (camera/video decode target)"
+    )
+    parser.add_argument(
+        "--window-width", type=int, default=1600,
+        help="initial window width (resizable window mode)"
+    )
+    parser.add_argument(
+        "--window-height", type=int, default=900,
+        help="initial window height (resizable window mode)"
+    )
+    parser.add_argument(
+        "--no-mirror", action="store_true",
+        help="disable selfie mirror mode"
+    )
     args = parser.parse_args()
 
     # parse source — integer for webcam, string for file
@@ -327,6 +375,11 @@ def main():
             show_angles=not args.no_angles,
             show_plot=not args.no_plot,
             apply_rotation=args.rotate,
+            frame_width=args.frame_width,
+            frame_height=args.frame_height,
+            window_width=args.window_width,
+            window_height=args.window_height,
+            mirror=not args.no_mirror,
         )
     elif args.mode == "analyze":
         run_analysis(

@@ -30,7 +30,7 @@ def filter_landmarks_by_visibility(
     prev_landmarks: np.ndarray | None = None,
     min_visibility: float = 0.5,
 ) -> np.ndarray:
-    """Replace low-visibility joints using the previous frame or a fallback.
+    """Replace low-visibility joints using the previous frame when available.
 
     Parameters
     ----------
@@ -68,12 +68,7 @@ def filter_landmarks_by_visibility(
                 )
             return filtered
 
-    visible_mask = ~low_vis_mask
-    if np.any(visible_mask):
-        fallback_xy = filtered[visible_mask, :2].mean(axis=0)
-    else:
-        fallback_xy = np.array([0.5, 0.5], dtype=np.float64)
-    filtered[low_vis_mask, :2] = fallback_xy
+    # No previous frame: keep raw coordinates to avoid collapsing the skeleton.
     return filtered
 
 
@@ -108,7 +103,7 @@ def ema_smooth_landmarks(
 class LandmarksTemporalFilter:
     """Visibility-aware temporal filter for MediaPipe pose landmarks."""
 
-    def __init__(self, min_visibility: float = 0.5, ema_alpha: float = 0.35):
+    def __init__(self, min_visibility: float = 0.3, ema_alpha: float = 0.35):
         self.min_visibility = float(min_visibility)
         self.ema_alpha = float(ema_alpha)
         self._prev: np.ndarray | None = None
