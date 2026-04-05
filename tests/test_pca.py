@@ -1,21 +1,4 @@
-"""
-Unit tests for src/pca.py and the shared helpers in src/linalg_utils.py.
-
-All tests use synthetic data with a *known* covariance structure so that
-expected values can be derived analytically and are not subject to randomness.
-
-Test classes
-------------
-TestCenterMatrix          — linalg_utils.center_matrix
-TestSelectNComponents     — linalg_utils.select_n_components
-TestFlattenPoses          — linalg_utils.flatten_poses
-TestPCAOrthonormality     — V_kᵀ V_k = I_k
-TestPCAZeroMeanProjection — mean of Z ≈ 0
-TestPCAVarianceRetention  — cumulative variance ratio ≥ threshold
-TestPCAReconstructionError— ‖X̃ − Z V_kᵀ‖_F decreases as k grows
-TestPCAInterface          — fit / transform / inverse_transform / fit_transform
-TestPCAEdgeCases          — bad inputs raise the correct exceptions
-"""
+"""Tests for PCA (SVD, component selection, projection, reconstruction)."""
 
 import numpy as np
 import pytest
@@ -24,10 +7,6 @@ from numpy.typing import NDArray
 from src.linalg_utils import center_matrix, flatten_poses, select_n_components
 from src.pca import DEFAULT_VARIANCE_THRESHOLD, PCA, fit_pca, project_poses
 
-
-# ---------------------------------------------------------------------------
-# Fixtures
-# ---------------------------------------------------------------------------
 
 RNG_SEED: int = 42
 N_FRAMES: int = 300     # T — enough frames for stable SVD

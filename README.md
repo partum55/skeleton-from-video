@@ -1,218 +1,232 @@
 # Skeleton Extraction from Video
 
-**Authors:** [Nazar Mykhailyshchuk](https://www.github.com/partum55), [Oleksii Lasiichuk](https://www.github.com/Oleksii-Lasiichuk)
-**Group:** АІ-2
-**Course:** Linear Algebra
-**Assignment:** LA Project — Robust Skeleton Extraction Methods in Computer Vision
-**Date:** March 2026
+**Authors:** [Oleksii Lasiichuk](https://www.github.com/Oleksii-Lasiichuk), [Oleksandr Lykhanskyi](https://www.github.com), [Nazar Mykhailyshchuk](https://www.github.com/partum55)
+**Group:** AI-2
+**Course:** Linear Algebra for Data Science
+**Date:** April 2026
 
 ## Description
 
-A real-time computer vision system that extracts human skeletons from video and uses linear algebra to detect exercises (squats, push-ups, jumping jacks) and count repetitions. The pipeline goes from raw pixels (a 4th-order tensor) through pose estimation, affine normalization, and joint angle computation (via the inner product) to rule-based classification with peak detection.
+A real-time computer vision pipeline that extracts human skeletons from video using MediaPipe and then applies **manually implemented linear algebra** to normalize poses, reduce dimensionality, detect exercises (squats, push-ups, jumping jacks), and count repetitions.
 
-Every computational step maps directly to linear algebra concepts: vectors in $\mathbb{R}^2$, matrices, linear and affine transformations, rotation matrices, the dot product, norms, and the cosine angle formula.
+MediaPipe is used **only** as a landmark detector (it maps each frame to 33 body-joint coordinates). Everything after detection is built from explicit matrix operations:
+
+1. **Procrustes normalization via SVD** — removes camera angle, position, and distance effects by finding the optimal 2x2 rotation matrix through Singular Value Decomposition.
+2. **PCA feature extraction via numpy SVD** — reduces the 66-dimensional pose vector to a small number of principal components using `numpy.linalg.svd` directly (no scikit-learn).
+3. **Repetition counting via least-squares** — fits a sinusoidal model to the first PCA component by solving normal equations, and the fitted frequency gives the rep count.
+4. **Joint angle computation via the dot product** — computes angles at elbows, knees, shoulders, and hips using the inner product cosine formula.
+5. **Graph Laplacian** — builds the skeleton adjacency matrix and graph Laplacian, verifying spectral properties (positive semi-definiteness, zero eigenvalue for connectivity).
 
 ## Requirements
 
 - Python 3.10+
-- pip (Python package installer)
-- Virtual environment (recommended)
-- A webcam (built-in laptop camera works fine)
+- pip
+- A webcam (for live mode) or a video file
+- macOS / Linux / Windows
 
 ## Installation
 
 ```bash
-# clone the repository
+# Clone the repository
 git clone https://github.com/partum55/skeleton-from-video.git
 cd skeleton-from-video
 
-# create virtual environment
+# Create and activate a virtual environment
 python3 -m venv venv
 
-# activate virtual environment
 # macOS / Linux:
 source venv/bin/activate
 # Windows:
 venv\Scripts\activate
 
-# install dependencies
+# Install dependencies
 pip install -r requirements.txt
 ```
 
-## Usage
+The MediaPipe model file (`pose_landmarker_lite.task`) is already included in the repository.
 
-### Live Mode (webcam — real-time exercise detection)
+## How to Run
 
-```bash
-python -m src.main --source 0 --mode live
-```
-
-This opens your webcam, draws the skeleton overlay, detects the exercise, and counts reps in real-time.
-
-**Controls:**
-- `q` — quit
-- `r` — reset rep counter
-
-### Live Mode with a video file
+### Live mode (webcam) — real-time exercise detection
 
 ```bash
-python -m src.main --source path/to/video.mp4 --mode live
+python main.py
 ```
 
-### Analyze Mode (offline skeleton extraction)
+This opens your webcam, draws a skeleton overlay on the video, detects the exercise type, and counts repetitions in real time.
+
+### Live mode with a video file
 
 ```bash
-python -m src.main --source path/to/video.mp4 --mode analyze --output skeletons.npy
+python main.py --source path/to/video.mp4
 ```
 
-Extracts all skeleton data from a video and saves it as a NumPy array.
+Video files loop automatically when they reach the end.
 
-### Additional flags
+### Analyze mode (offline skeleton extraction)
 
 ```bash
-python -m src.main --source 0 --no-angles    # hide angle overlay
-python -m src.main --source 0 --no-plot       # hide angle-vs-time plot
-python -m src.main --source 0 --rotate        # apply rotation normalization
+python main.py --mode analyze --source path/to/video.mp4 --output skeletons.npy
 ```
+
+Extracts all skeletons from a video file and saves them as a NumPy array (`T x 33 x 2`). Also prints the Euclidean distance and cosine similarity between the first and last frame.
+
+### All CLI flags
+
+| Flag | Default | Description |
+|------|---------|-------------|
+| `--source` | `0` (webcam) | Video source: `0` for webcam, or path to a video file |
+| `--mode` | `live` | `live` for real-time detection, `analyze` for offline processing |
+| `--output` | none | Output path for `.npy` skeleton data (analyze mode only) |
+| `--rotate` | off | Apply Procrustes rotation normalization |
+| `--no-angles` | off | Hide the joint angle overlay |
+| `--no-plot` | off | Hide the angle-vs-time plot |
+| `--no-mirror` | off | Disable selfie mirror (webcam is mirrored by default) |
+| `--frame-width` | 1280 | Camera capture width |
+| `--frame-height` | 720 | Camera capture height |
+| `--window-width` | 1600 | Initial display window width |
+| `--window-height` | 900 | Initial display window height |
+
+### Keyboard controls (live mode)
+
+| Key | Action |
+|-----|--------|
+| `q` | Quit |
+| `r` | Reset rep counter and all filters |
+| `f` | Toggle fullscreen |
+
+## Pipeline
+
+```
+Raw video frame
+    |
+    v
+[MediaPipe] Extract 33 landmarks (x, y, visibility)
+    |
+    v
+[Temporal filter] EMA smoothing + visibility-based repair
+    |
+    v
+[Normalize] Translate to hip center -> Scale by torso length -> Procrustes rotation (SVD)
+    |
+    v
+[Features] Joint angles via dot product, body position features
+    |
+    v                                               |
+    v                                               v
+[Angle-based classifier]                [PCA on sliding window]
+  FSM with multi-layer validation         Manual SVD -> project to k dims
+  (phase time, hold, velocity,            -> sinusoidal least-squares fit
+   amplitude, hysteresis)                 -> frequency -> rep count
+    |                                               |
+    v                                               v
+               [Label fusion]
+        Confidence-gated combination of
+        angle-based and PCA-based labels
+                    |
+                    v
+             [Visualization]
+        Skeleton overlay, HUD, angle plot
+```
+
+### Step-by-step walkthrough
+
+1. **Capture frame** — OpenCV reads a frame from the webcam or video file.
+2. **Pose estimation** — MediaPipe detects 33 body keypoints and returns `S(t) in R^{33x3}` (x, y, visibility).
+3. **Temporal filtering** — An exponential moving average (EMA) smooths jittery landmarks; low-visibility joints fall back to the previous frame's values.
+4. **Normalization** — The skeleton is translated so the hip center is at the origin, scaled so the torso length equals 1, and optionally rotated to align with a reference pose via Procrustes/SVD.
+5. **Joint angles** — Angles at 8 joints (left/right elbows, knees, shoulders, hips) are computed using the dot-product formula: `theta = arccos((u . v) / (||u|| * ||v||))`.
+6. **Body features** — Torso verticality and leg spread are computed to distinguish exercises (e.g., standing vs. push-up position).
+7. **FSM classification** — A finite-state machine with two states (up/down) detects exercise type and counts reps using angle thresholds with multi-layer validation (minimum phase time, hold time, velocity check, amplitude check, hysteresis).
+8. **PCA + sinusoidal fitting** — A sliding window of normalized skeletons is flattened to `R^{T x 66}`, PCA reduces it to k dimensions (95% variance), and a sinusoidal model `z1(t) = w1*sin(wt) + w2*cos(wt) + w3` is fit via least-squares to estimate rep frequency.
+9. **Label fusion** — The angle-based label and PCA-based label are combined using the PCA confidence score.
+10. **Visualization** — The skeleton, exercise name, rep count, FPS, and an angle-vs-time plot are drawn on the frame.
+
+## Linear Algebra Concepts Implemented Manually
+
+| Concept | Where in Code | What It Does |
+|---------|---------------|--------------|
+| **SVD (Singular Value Decomposition)** | `src/normalize.py`, `src/pca.py` | Procrustes alignment (optimal rotation) and PCA (dimensionality reduction) |
+| **Rotation matrices** | `src/normalize.py` | 2x2 orthogonal matrix with det=+1 from SVD, applied to align poses |
+| **Affine transformations** | `src/normalize.py` | Translation (hip centering), scaling (torso normalization) |
+| **Inner product / dot product** | `src/features.py` | Joint angle computation via the cosine formula |
+| **Vector norms** | `src/features.py`, `src/normalize.py` | Euclidean distance, torso length, cosine similarity |
+| **Least-squares (normal equations)** | `src/repetition.py` | Sinusoidal fit: `A^T A w = A^T z1`, grid search over frequencies |
+| **Design matrices** | `src/repetition.py` | `A(omega) = [sin(wt), cos(wt), 1]` for each frame |
+| **Data centering** | `src/linalg_utils.py`, `src/pca.py` | Mean subtraction before SVD for PCA |
+| **Variance from singular values** | `src/pca.py`, `src/linalg_utils.py` | Component selection: keep k such that cumulative `sigma_i^2` >= 95% of total |
+| **Projection onto subspace** | `src/pca.py` | `Z = X_centered * V_k` projects T frames to k dimensions |
+| **Graph adjacency matrix** | `src/skeleton.py` | `A in {0,1}^{33x33}` — symmetric, binary, zero-diagonal |
+| **Graph Laplacian** | `src/skeleton.py` | `L = D - A` — symmetric PSD, zero eigenvalue proves connectivity |
+| **Matrix flattening (vectorization)** | `src/features.py`, `src/linalg_utils.py` | `R^{33x2}` -> `R^{66}` for PCA input |
 
 ## Project Structure
 
 ```
 skeleton-from-video/
+├── main.py                        # entry point: CLI argument parsing, live and analyze modes
 ├── src/
-│   ├── __init__.py        # package marker
-│   ├── main.py            # main entry point — video loop, pipeline orchestration
-│   ├── skeleton.py        # mediapipe pose estimation, adjacency matrix, graph laplacian
-│   ├── normalize.py       # affine normalization: translation, scaling, rotation
-│   ├── features.py        # joint angles (dot product), velocity, distance metrics
-│   ├── classify.py        # rule-based exercise classification + rep counting
-│   └── visualize.py       # skeleton drawing, info overlay, angle plots
+│   ├── __init__.py                # package marker
+│   ├── skeleton.py                # MediaPipe pose estimation, adjacency matrix, graph Laplacian, EMA filter
+│   ├── normalize.py               # Procrustes normalization: translation, scaling, SVD-based rotation
+│   ├── features.py                # joint angles (dot product), body position features, distance metrics
+│   ├── classify.py                # FSM-based exercise classification and rep counting
+│   ├── pca.py                     # PCA via manual SVD (no scikit-learn)
+│   ├── repetition.py              # sinusoidal least-squares fitting for rep counting
+│   ├── linalg_utils.py            # shared utilities: centering, flattening, component selection
+│   └── visualize.py               # skeleton drawing, HUD overlay, angle-vs-time plot
 ├── tests/
-│   └── test_main.py       # 34 unit tests covering all modules
-├── requirements.txt       # python dependencies
-├── must_read_la.md        # detailed mapping of LA concepts to code
+│   ├── conftest.py                # pytest configuration
+│   ├── test_main.py               # adjacency, Laplacian, normalization, angles, classifier tests
+│   ├── test_normalize.py          # translation, scaling, Procrustes rotation, full pipeline tests
+│   ├── test_pca.py                # centering, orthonormality, variance retention, reconstruction tests
+│   ├── test_repetition.py         # design matrix, normal equations, frequency recovery, classification tests
+│   └── test_runtime_stability.py  # temporal smoothing, FSM timing, label fusion tests
+├── pose_landmarker_lite.task      # MediaPipe pre-trained model file
+├── requirements.txt               # Python dependencies
 ├── LICENSE
-└── README.md
+└── .github/workflows/ci.yml      # GitHub Actions CI (runs tests on push)
 ```
 
-## Pipeline
+## Testing
 
+168 unit tests verify every linear algebra property:
+
+```bash
+# Activate virtual environment first
+source venv/bin/activate
+
+# Run all tests
+python -m pytest tests/ -v
+
+# Run a specific test file
+python -m pytest tests/test_pca.py -v
+
+# Run a specific test class
+python -m pytest tests/test_normalize.py::TestProcrustesRotation -v
 ```
-Video (V ∈ R^{T×H×W×3})
-    ↓
-Pose Estimation (MediaPipe) → S(t) ∈ R^{33×2}
-    ↓
-Normalization: q = (1/d_ref) · R(α) · (p - c)
-    ↓
-Joint Angles: θ = arccos(⟨u,v⟩ / (‖u‖·‖v‖))
-    ↓
-Classification (angle thresholds + peak detection)
-    ↓
-Output: exercise name + rep count
-```
 
-## Features
+### What the tests cover
 
-- Real-time skeleton extraction at ~30 FPS using MediaPipe
-- Affine normalization (translation, scaling, rotation) for camera-invariant detection
-- Joint angle computation using the inner product cosine formula
-- Rule-based classification for squats, push-ups, and jumping jacks
-- Automatic repetition counting via peak detection (scipy)
-- Live angle-vs-time plot embedded in the video window
-- Offline analysis mode with skeleton data export to `.npy`
-
-## Video Demo Approach
-
-For the project video demonstration, we use the laptop's built-in webcam directly:
-
-1. Run the program: `python -m src.main --source 0`
-2. Stand in front of the laptop camera and perform exercises
-3. The program shows the skeleton overlay, detected exercise, rep count, and angle plot in real time
-4. Record the screen using macOS screen recording (Cmd+Shift+5) or OBS
-
-This captures both the code output and the live exercise detection in a single recording.
+- **Graph structure** — adjacency matrix symmetry, binary values, zero diagonal; Laplacian is PSD with zero eigenvalue
+- **Normalization** — hip centering, unit torso length, rotation orthogonality (`R^T R = I`), determinant = +1, length preservation, Procrustes recovery of known rotations
+- **Angles** — 0, 45, 90, 180 degree cases using the dot product formula
+- **Distance metrics** — Euclidean distance symmetry/positivity, cosine similarity range
+- **PCA** — orthonormality of components (`V_k^T V_k = I`), zero-mean projections, variance retention >= threshold, reconstruction error decreases with k, full-rank gives near-zero error
+- **Least-squares repetition counting** — design matrix shape, normal equations hold (`A^T A w = A^T z1`), perfect-fit residual is near zero, frequency recovery from noiseless and noisy synthetic signals
+- **Runtime stability** — EMA smoothing weights, visibility-based joint repair, FSM uses wall-clock time (not frame count), label fusion respects PCA confidence, SVD component sign alignment
 
 ## Dependencies
 
 | Library | Purpose |
-|---|---|
-| `mediapipe` | Pose estimation — extracts 33 keypoints from each frame |
+|---------|---------|
+| `mediapipe` | Pose estimation — detects 33 keypoints per frame |
 | `opencv-python` | Video capture, frame processing, drawing |
-| `numpy` | All matrix/vector operations — the LA backbone |
-| `scipy` | Peak detection for repetition counting |
-| `matplotlib` | Visualization and plotting |
+| `numpy` | All matrix/vector operations (SVD, dot products, norms, etc.) |
+| `scipy` | Peak detection (used alongside the least-squares approach) |
+| `matplotlib` | Angle-vs-time plot rendering |
 | `pytest` | Unit testing framework |
-
-## Testing
-
-```bash
-# run all tests
-python -m pytest tests/test_main.py -v
-
-# run a specific test class
-python -m pytest tests/test_main.py::TestGraphLaplacian -v
-```
-
-34 tests covering:
-- Adjacency matrix properties (symmetry, binary, zero diagonal)
-- Graph Laplacian properties (PSD, zero eigenvalue, row sums)
-- Normalization (centering, scaling, rotation orthogonality)
-- Angle computation (0°, 45°, 90°, 180°)
-- Distance metrics (Euclidean, cosine similarity)
-- Classifier state management and exercise detection
 
 ## License
 
 See [LICENSE](LICENSE) for details.
-
-Run tests using unittest:
-
-```bash
-# Run all tests
-python -m unittest discover tests/
-
-# Run specific test file
-python -m unittest tests.test_main
-
-# Run specific test class
-python -m unittest tests.test_main.TestMainFunctions
-
-# Run with verbose output
-python -m unittest discover tests/ -v
-
-# Run tests from project root
-python -m unittest discover -s tests -p "test_*.py"
-```
-
-## Tasks Completed
-
-- [x] Task 1: Description
-- [x] Task 2: Description
-- [ ] Task 3: Description (optional/bonus)
-
-## Known Issues
-
-- Issue 1: Description and potential workaround
-- Issue 2: Description
-
-## Development Notes
-
-### Code Style
-- Following PEP 8 guidelines
-- Type hints used where applicable
-- Docstrings for all functions
-
-### Algorithms Used
-- Algorithm 1: Brief description
-- Algorithm 2: Brief description
-
-## References
-
-- [Course materials link]
-- [Python documentation](https://docs.python.org/)
-- [Library documentation links]
-- [Any research papers or articles]
-
-## Author Notes
-
-Additional comments about implementation choices, challenges faced, or interesting solutions.

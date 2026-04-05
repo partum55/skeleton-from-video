@@ -1,16 +1,4 @@
-"""
-Unit tests for src/repetition.py  (Developer 3 — repetition counting).
-
-Test classes
-------------
-TestBuildDesignMatrix     — shape, sin/cos columns, constant column
-TestFitFrequency          — normal equations hold, residual is non-negative
-TestFindBestFrequency     — recovers known frequency from synthetic sinusoid
-TestCountRepetitions      — round(ω̂ · T / 2π) formula
-TestClassifyExercise      — label returned for synthetic Z matrices
-TestFullPipeline          — count_reps_and_classify end-to-end
-TestEdgeCases             — bad inputs raise correct exceptions
-"""
+"""Tests for sinusoidal repetition counting and exercise classification."""
 
 import numpy as np
 import pytest
@@ -26,10 +14,6 @@ from src.repetition import (
     fit_frequency,
 )
 
-
-# ---------------------------------------------------------------------------
-# Helpers
-# ---------------------------------------------------------------------------
 
 def _make_sinusoid(
     T: int,

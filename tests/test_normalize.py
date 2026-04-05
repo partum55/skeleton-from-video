@@ -1,15 +1,4 @@
-"""
-Unit tests for src/normalize.py  (Developer 1 — Procrustes normalisation).
-
-Test classes
-------------
-TestTranslation          — translate() centres the hip midpoint at the origin
-TestScaling              — scale() makes the torso length equal to 1
-TestProcrustesRotation   — R* is orthogonal, det = +1, recovers a known angle
-TestNormalizeSkeleton    — full pipeline: shape, hip at origin, torso = 1
-TestNormalizeSequence    — batch wrapper behaves consistently
-TestEdgeCases            — degenerate inputs and bad shapes
-"""
+"""Tests for skeleton normalization (translation, scaling, Procrustes rotation)."""
 
 import numpy as np
 import pytest
@@ -28,10 +17,6 @@ from src.normalize import (
     translate,
 )
 
-
-# ---------------------------------------------------------------------------
-# Fixtures
-# ---------------------------------------------------------------------------
 
 N_LANDMARKS: int = 33
 
@@ -71,10 +56,6 @@ def _rotation_matrix_2d(angle_rad: float) -> NDArray[np.float64]:
     return np.array([[c, -s], [s, c]], dtype=np.float64)
 
 
-# ---------------------------------------------------------------------------
-# Translation
-# ---------------------------------------------------------------------------
-
 class TestTranslation:
     def test_hip_center_formula(self) -> None:
         sk = _make_skeleton()
@@ -108,10 +89,6 @@ class TestTranslation:
         assert center.shape == (2,)
 
 
-# ---------------------------------------------------------------------------
-# Scaling
-# ---------------------------------------------------------------------------
-
 class TestScaling:
     def test_torso_length_is_positive(self) -> None:
         assert compute_torso_length(_make_skeleton()) > 0.0
@@ -136,10 +113,6 @@ class TestScaling:
         result = scale(sk, 0.0)
         np.testing.assert_array_equal(result, sk)
 
-
-# ---------------------------------------------------------------------------
-# Procrustes rotation — the core Developer 1 contribution
-# ---------------------------------------------------------------------------
 
 class TestProcrustesRotation:
     """R* must be orthogonal, have det = +1, and recover a known rotation."""
@@ -211,10 +184,6 @@ class TestProcrustesRotation:
         np.testing.assert_almost_equal(np.linalg.det(R), 1.0, decimal=10)
 
 
-# ---------------------------------------------------------------------------
-# rotate()
-# ---------------------------------------------------------------------------
-
 class TestRotate:
     def test_preserves_vector_lengths(self) -> None:
         sk = _make_skeleton()
@@ -233,10 +202,6 @@ class TestRotate:
         sk = _make_skeleton()
         assert rotate(sk, np.eye(2)).shape == (N_LANDMARKS, 2)
 
-
-# ---------------------------------------------------------------------------
-# Full pipeline — normalize_skeleton
-# ---------------------------------------------------------------------------
 
 class TestNormalizeSkeleton:
     def test_output_shape(self) -> None:
@@ -298,10 +263,6 @@ class TestNormalizeSkeleton:
         result = normalize_skeleton(sk, reference_pose=custom_ref)
         assert result.shape == (N_LANDMARKS, 2)
 
-
-# ---------------------------------------------------------------------------
-# Sequence wrapper
-# ---------------------------------------------------------------------------
 
 class TestNormalizeSequence:
     def test_output_shape(self) -> None:

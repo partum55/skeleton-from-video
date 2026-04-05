@@ -1,25 +1,10 @@
-"""
-rule-based exercise classification and time-based FSM repetition counting.
-
-Key accuracy features:
-- Hold-time validation: angle must stay in threshold zone for min duration
-- Velocity direction check: motion must be in correct direction for transition
-- Amplitude validation: meaningful range of motion required before counting rep
-- Temporal hysteresis: wider threshold gap after recent transitions
-"""
+"""Rule-based exercise classification and FSM repetition counting."""
 
 import numpy as np
 
 
 class ExerciseClassifier:
-    """Classify exercises and count repetitions with a finite-state machine.
-    
-    The FSM uses multiple validation layers to prevent false counts:
-    1. Hold-time: angle must remain past threshold for min_hold_time_s
-    2. Velocity: angle derivative must have correct sign for transition
-    3. Amplitude: rep only counts if angle range exceeds min_amplitude_deg
-    4. Phase time: minimum time must pass in each phase
-    """
+    """Two-state FSM (up/down) for exercise detection and rep counting."""
 
     EXERCISE_RULES = {
         "squat": {
@@ -46,10 +31,10 @@ class ExerciseClassifier:
         self,
         confidence_time_s: float = 0.30,
         idle_time_s: float = 0.70,
-        dead_zone_deg: float = 10.0,       # increased from 5 for more hysteresis
-        min_phase_time_s: float = 0.25,    # increased from 0.20
-        min_hold_time_s: float = 0.08,     # NEW: hold time before confirming transition
-        min_velocity_frames: int = 2,       # NEW: frames to check velocity direction
+        dead_zone_deg: float = 10.0,
+        min_phase_time_s: float = 0.25,
+        min_hold_time_s: float = 0.08,
+        min_velocity_frames: int = 2,
         default_fps: float = 30.0,
     ):
         self.angle_history: dict[str, list[float]] = {
@@ -73,25 +58,20 @@ class ExerciseClassifier:
         self._idle_time_acc_s: float = 0.0
         self._last_active_exercise: str | None = None
 
-        # FSM state
         self._state: str = "up"
         self._state_time_s: float = 0.0
-        
-        # Hold-time validation: pending transition tracking
-        self._pending_transition: str | None = None  # "down" or "up"
+
+        self._pending_transition: str | None = None
         self._pending_time_s: float = 0.0
-        
-        # Velocity tracking for direction validation
+
         self._recent_angles: list[float] = []
         self._max_recent_angles = 5
-        
-        # Amplitude tracking for rep validation
+
         self._phase_min_angle: float = 180.0
         self._phase_max_angle: float = 0.0
-        
-        # Hysteresis: tighten thresholds after recent transition
-        self._recent_transition_time_s: float = 1.0  # time since last transition
-        self._hysteresis_window_s: float = 0.3       # apply hysteresis for this long
+
+        self._recent_transition_time_s: float = 1.0
+        self._hysteresis_window_s: float = 0.3
 
     def reset(self):
         """Reset all state for a new session."""
@@ -108,7 +88,6 @@ class ExerciseClassifier:
         self._state = "up"
         self._state_time_s = 0.0
         
-        # Reset new validation state
         self._pending_transition = None
         self._pending_time_s = 0.0
         self._recent_angles.clear()
@@ -117,20 +96,12 @@ class ExerciseClassifier:
         self._recent_transition_time_s = 1.0
 
     def update(
-        self, 
-        angles: dict[str, float], 
+        self,
+        angles: dict[str, float],
         dt: float | None = None,
         body_features: dict[str, float] | None = None,
     ) -> tuple[str | None, int]:
-        """Update classifier with new frame angles and return (exercise, reps).
-        
-        Parameters
-        ----------
-        angles: Joint angles from compute_key_angles()
-        dt: Time delta since last frame (seconds)
-        body_features: Optional body position features from compute_body_position_features()
-                      Used for improved exercise detection (torso orientation, leg spread)
-        """
+        """Feed new frame angles, return (exercise_label, rep_count)."""
         dt_s = self._default_dt if dt is None else float(max(1e-3, dt))
 
         knee_angle = (angles.get("left_knee", 180) + angles.get("right_knee", 180)) / 2.0
@@ -162,49 +133,28 @@ class ExerciseClassifier:
 
     @staticmethod
     def _detect_exercise(
-        knee: float, 
-        elbow: float, 
-        shoulder: float, 
+        knee: float,
+        elbow: float,
+        shoulder: float,
         hip: float,
         body_features: dict[str, float] | None = None,
     ) -> str | None:
-        """Detect exercise type from joint angles and body position.
-        
-        Improved detection with strict body position checks:
-        - Squat: requires both bent knee AND bent hip (seated position)
-        - Push-up: REQUIRES horizontal body position (torso_verticality < 0.5)
-        - Jumping jack: requires raised arms + upright stance + leg spread
-        
-        Walking/standing will NOT trigger push-up because torso is vertical.
-        """
-        # Extract body features with defaults for upright standing
-        torso_vert = 1.0  # default = upright (prevents false push-up detection)
+        """Detect exercise type from joint angles and body position."""
+        torso_vert = 1.0
         leg_spread = 0.3
         if body_features:
             torso_vert = body_features.get("torso_verticality", 1.0)
             leg_spread = body_features.get("leg_spread", 0.3)
         
-        # Squat: knee bent, hip flexed, semi-upright torso
         squat_active = knee < 130 and hip < 145 and torso_vert > 0.4
-        
-        # Push-up: STRICT horizontal body requirement
-        # torso_verticality < 0.5 means body is more horizontal than 45°
-        # This prevents standing/walking from triggering push-up
+
         is_horizontal = torso_vert < 0.5
-        pushup_active = (
-            is_horizontal            # REQUIRED: body must be horizontal
-            and elbow < 140          # arms bent (relaxed threshold)
-            and knee > 120           # legs mostly extended
-        )
-        
-        # Jumping jack: arms raised significantly, upright stance
+        pushup_active = is_horizontal and elbow < 140 and knee > 120
+
         jj_active = shoulder > 100 and knee > 150 and hip > 150 and torso_vert > 0.7
-        
-        # Priority-based classification with conflict resolution
+
         if squat_active and not jj_active:
-            # Squat takes priority when legs are bent
             if pushup_active:
-                # Both active: choose based on which angle is more extreme
                 return "squat" if (180 - knee) > (180 - elbow) else "pushup"
             return "squat"
         
@@ -253,12 +203,11 @@ class ExerciseClassifier:
         return self.current_exercise
 
     def _initialize_rep_state(self, exercise: str) -> None:
-        """Initialize FSM state when switching to a new exercise."""
+        """Reset FSM when switching to a different exercise."""
         rules = self.EXERCISE_RULES[exercise]
         angle_key = rules["primary_angle"]
         history = self.angle_history[angle_key]
-        
-        # Reset all validation state
+
         self._pending_transition = None
         self._pending_time_s = 0.0
         self._recent_angles.clear()
@@ -277,21 +226,14 @@ class ExerciseClassifier:
         self._state_time_s = 0.0
 
     def _compute_angle_velocity(self) -> float:
-        """Compute smoothed angle velocity from recent history.
-        
-        Returns positive value if angle is increasing, negative if decreasing.
-        """
+        """Angle change over the recent window (positive = increasing)."""
         if len(self._recent_angles) < 2:
             return 0.0
         # Use simple difference of first and last for robustness
         return self._recent_angles[-1] - self._recent_angles[0]
     
     def _is_velocity_valid_for_transition(self, target_state: str) -> bool:
-        """Check if velocity direction supports the requested transition.
-        
-        For transition to "down": angle should be decreasing (velocity < 0)
-        For transition to "up": angle should be increasing (velocity > 0)
-        """
+        """True if the angle is moving in the right direction for the transition."""
         if len(self._recent_angles) < self._min_velocity_frames:
             return True  # Not enough data, allow transition
         
@@ -303,7 +245,7 @@ class ExerciseClassifier:
             return velocity > -5.0  # Allow small negative velocity
     
     def _get_effective_thresholds(self, rules: dict) -> tuple[float, float]:
-        """Get thresholds with hysteresis adjustment after recent transitions."""
+        """Up/down thresholds, widened briefly after a recent transition."""
         up_thr = float(rules["up_threshold"]) - self._dead_zone_deg
         down_thr = float(rules["down_threshold"]) + self._dead_zone_deg
         
@@ -322,14 +264,7 @@ class ExerciseClassifier:
         return up_thr, down_thr
 
     def _update_rep_fsm(self, exercise: str, angle_value: float, dt_s: float) -> None:
-        """Update FSM with multi-layer validation for accurate rep counting.
-        
-        Validation layers:
-        1. Phase time: minimum time must pass in current phase
-        2. Hold time: angle must stay past threshold for hold duration
-        3. Velocity: motion direction must be consistent with transition
-        4. Amplitude: sufficient range of motion before counting rep
-        """
+        """Advance the up/down state machine, count a rep on confirmed up transition."""
         rules = self.EXERCISE_RULES[exercise]
         min_amplitude = float(rules.get("min_amplitude", 30.0))
         up_thr, down_thr = self._get_effective_thresholds(rules)
@@ -418,19 +353,13 @@ def count_reps_from_signal(
     up_threshold: float = 150.0,
     down_threshold: float | None = None,
     sample_rate_hz: float = 30.0,
-    dead_zone_deg: float = 10.0,       # increased from 5
-    min_phase_time_s: float = 0.25,    # increased from 0.20
+    dead_zone_deg: float = 10.0,
+    min_phase_time_s: float = 0.25,
     min_distance: int | None = None,
-    min_amplitude_deg: float = 30.0,   # NEW: minimum angle range for valid rep
-    min_hold_time_s: float = 0.08,     # NEW: hold time before confirming transition
+    min_amplitude_deg: float = 30.0,
+    min_hold_time_s: float = 0.08,
 ) -> int:
-    """Count reps from a 1-D angle signal using FSM with validation layers.
-    
-    Validation layers (same as ExerciseClassifier):
-    1. Phase time: minimum time in each phase before transition
-    2. Hold time: angle must stay past threshold for min duration
-    3. Amplitude: minimum range of motion required for valid rep
-    """
+    """Count reps from a 1-D angle signal using the same FSM logic."""
     signal = np.asarray(angle_signal, dtype=np.float64)
     if signal.ndim != 1 or len(signal) < 10:
         return 0

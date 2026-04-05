@@ -8,7 +8,6 @@ import numpy as np
 from src.skeleton import SKELETON_CONNECTIONS, NUM_LANDMARKS
 
 
-# ── Color palette ─────────────────────────────────────────────────────────────
 JOINT_COLOR      = (0, 255, 120)    # mint green
 BONE_COLOR       = (210, 210, 210)  # light gray
 BAR_BG           = (18, 18, 18)     # near-black bars
@@ -28,8 +27,6 @@ TOP_BAR_H  = 72   # px — top HUD bar height
 BOT_BAR_H  = 44   # px — bottom HUD bar height
 BAR_ALPHA  = 0.78 # bar transparency (higher = more opaque)
 
-
-# ── Skeleton ──────────────────────────────────────────────────────────────────
 
 def draw_skeleton(frame: np.ndarray, landmarks: np.ndarray,
                   joint_radius: int = 5, bone_thickness: int = 2) -> np.ndarray:
@@ -58,8 +55,6 @@ def draw_skeleton(frame: np.ndarray, landmarks: np.ndarray,
     return out
 
 
-# ── Internal helpers ──────────────────────────────────────────────────────────
-
 def _blend_rect(frame: np.ndarray, x0: int, y0: int, x1: int, y1: int,
                 color: tuple, alpha: float) -> np.ndarray:
     """draw a filled rectangle blended over the frame."""
@@ -79,8 +74,6 @@ def _text_w(text: str, scale: float, thickness: int = 1) -> int:
     return w
 
 
-# ── Main HUD ─────────────────────────────────────────────────────────────────
-
 def draw_info_overlay(
     frame: np.ndarray,
     exercise: str | None,
@@ -91,33 +84,13 @@ def draw_info_overlay(
     warmup_progress: float = 0.0,
     rep_flash: bool = False,
 ) -> np.ndarray:
-    """draw the full HUD: top bar + bottom bar.
-
-    Parameters
-    ----------
-    exercise:
-        Exercise label or None (shows "DETECTING...").
-    rep_count:
-        Current repetition count.
-    angles:
-        Dict of joint angles for the bottom bar.
-    fps:
-        Frames per second for the top-right corner.
-    warming_up:
-        If True, shows warm-up progress bar instead of normal content.
-    warmup_progress:
-        Float in [0, 1] — how far through warm-up.
-    rep_flash:
-        If True, rep counter renders in white (flash on new rep).
-    """
+    """Draw the full HUD: top bar (exercise + reps + FPS) and bottom bar (angles + hints)."""
     h, w = frame.shape[:2]
     out = frame.copy()
 
-    # ── Top bar ───────────────────────────────────────────────────────────────
     out = _blend_rect(out, 0, 0, w, TOP_BAR_H, BAR_BG, BAR_ALPHA)
 
     if warming_up:
-        # centred label
         label = "WARMING UP"
         lw = _text_w(label, 0.85, 2)
         _put(out, label, (w - lw) // 2, 30, 0.85, WARMUP_BAR_FG, 2)
@@ -132,11 +105,9 @@ def draw_info_overlay(
         _put(out, f"{int(warmup_progress * 100)}%", bx1 + 6, by + 9, 0.4, TEXT_SECONDARY)
 
     else:
-        # ── Left: exercise label ──────────────────────────────────────────────
         ex = exercise.upper().replace("_", " ") if exercise else "DETECTING..."
         _put(out, ex, 16, 46, 0.9, TEXT_ACCENT, 2)
 
-        # ── Centre: rep counter ───────────────────────────────────────────────
         rep_str  = str(rep_count)
         rep_col  = TEXT_REPS_FLASH if rep_flash else TEXT_REPS
         rw       = _text_w(rep_str, 2.2, 4)
@@ -145,19 +116,15 @@ def draw_info_overlay(
         _put(out, "REPS",    cx - lw_reps // 2, 18,  0.4,  TEXT_SECONDARY, 1)
         _put(out, rep_str,   cx - rw // 2,       60,  2.2,  rep_col,        4)
 
-        # ── Right: FPS ────────────────────────────────────────────────────────
         if fps is not None:
             fps_txt = f"{fps:.0f} fps"
             _put(out, fps_txt, w - _text_w(fps_txt, 0.48) - 14, 46, 0.48, TEXT_SECONDARY)
 
-    # ── Bottom bar ────────────────────────────────────────────────────────────
     out = _blend_rect(out, 0, h - BOT_BAR_H, w, h, BAR_BG, BAR_ALPHA)
 
-    # keyboard hints — right side
     hints = "[Q] Quit   [R] Reset"
     _put(out, hints, w - _text_w(hints, 0.42) - 14, h - 14, 0.42, TEXT_HINT)
 
-    # angles — left side, three horizontal groups
     if angles:
         lk  = angles.get("left_knee",      0.0)
         rk  = angles.get("right_knee",     0.0)
@@ -178,8 +145,6 @@ def draw_info_overlay(
 
     return out
 
-
-# ── Angle plot ────────────────────────────────────────────────────────────────
 
 def create_angle_plot(angle_history: list[float], title: str = "angle",
                       width: int = 280, height: int = 130) -> np.ndarray:
