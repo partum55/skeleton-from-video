@@ -16,7 +16,7 @@ from src.normalize import (
     compute_hip_center,
     compute_shoulder_center,
     translate,
-    compute_reference_distance,
+    compute_torso_length,
     scale,
     rotation_matrix,
     rotate,
@@ -187,7 +187,7 @@ class TestNormalization:
         sk = _make_skeleton()
         center = compute_hip_center(sk)
         translated = translate(sk, center)
-        d_ref = compute_reference_distance(sk)
+        d_ref = compute_torso_length(sk)
         scaled = scale(translated, d_ref)
         # recompute torso length after scaling
         sh_mid = compute_shoulder_center(scale(sk, d_ref))

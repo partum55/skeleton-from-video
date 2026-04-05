@@ -82,7 +82,7 @@ def run_live(source: int | str = 0, show_angles: bool = True,
                 frame = draw_skeleton(frame, landmarks)
 
                 # normalize skeleton (translation + scaling + optional rotation)
-                normalized = normalize_skeleton(landmarks, apply_rotation=apply_rotation)
+                normalized = normalize_skeleton(landmarks, apply_procrustes=apply_rotation)
 
                 # compute joint angles using the dot product formula
                 angles = compute_key_angles(landmarks)
