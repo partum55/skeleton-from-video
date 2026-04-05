@@ -16,6 +16,9 @@ from src.normalize import normalize_skeleton
 from src.features import compute_key_angles, flatten_skeleton, euclidean_distance, cosine_similarity
 from src.classify import ExerciseClassifier
 from src.visualize import draw_skeleton, draw_info_overlay, create_angle_plot
+from collections import deque
+from src.pca import PCA
+from src.repetition import count_reps_and_classify
 
 
 # global flag for graceful shutdown
@@ -58,6 +61,19 @@ def run_live(source: int | str = 0, show_angles: bool = True,
     prev_skeleton = None
     primary_angle_history: list[float] = []
 
+    # PCA + repetition counting state
+    MIN_FRAMES = 60       # warm-up: ~2 сек при 30fps
+    REFIT_EVERY = 30      # переобчислення PCA кожні ~1 сек
+    skeleton_buffer: deque = deque(maxlen=300)
+    frame_counter: int = 0
+    pca_reps: int = 0
+    pca_label: str | None = None
+    warming_up: bool = True
+
+    # UI state
+    prev_pca_reps: int = 0
+    rep_flash_frames: int = 0   # counts down; >0 means flash is active
+
     print("press 'q' to quit, 'r' to reset rep counter")
 
     try:
@@ -84,6 +100,21 @@ def run_live(source: int | str = 0, show_angles: bool = True,
                 # normalize skeleton (translation + scaling + optional rotation)
                 normalized = normalize_skeleton(landmarks, apply_procrustes=apply_rotation)
 
+                # buffer normalized skeleton for PCA-based rep counting
+                flat = flatten_skeleton(normalized)   # (66,)
+                skeleton_buffer.append(flat)
+                frame_counter += 1
+
+                if len(skeleton_buffer) >= MIN_FRAMES and frame_counter % REFIT_EVERY == 0:
+                    try:
+                        X = np.array(skeleton_buffer, dtype=np.float64)   # (T, 66)
+                        pca = PCA(variance_threshold=0.95)
+                        Z = pca.fit_transform(X)                           # (T, k)
+                        pca_reps, pca_label, _ = count_reps_and_classify(Z)
+                        warming_up = False
+                    except Exception:
+                        pass
+
                 # compute joint angles using the dot product formula
                 angles = compute_key_angles(landmarks)
 
@@ -108,21 +139,40 @@ def run_live(source: int | str = 0, show_angles: bool = True,
             fps = 1.0 / max(curr_time - prev_time, 1e-6)
             prev_time = curr_time
 
-            # draw info overlay
-            frame = draw_info_overlay(frame, exercise, reps,
-                                      angles=angles if show_angles else None,
-                                      fps=fps)
+            # rep flash: trigger on new rep, count down for ~10 frames
+            display_reps = pca_reps if not warming_up else classifier.rep_count
+            if display_reps > prev_pca_reps:
+                rep_flash_frames = 10
+            prev_pca_reps = display_reps
+            rep_flash = rep_flash_frames > 0
+            if rep_flash_frames > 0:
+                rep_flash_frames -= 1
 
-            # draw angle plot if enabled
+            # warm-up progress for the progress bar
+            warmup_progress = len(skeleton_buffer) / MIN_FRAMES
+
+            # draw info overlay
+            frame = draw_info_overlay(
+                frame,
+                exercise=pca_label if not warming_up else None,
+                rep_count=display_reps,
+                angles=angles if show_angles else None,
+                fps=fps,
+                warming_up=warming_up,
+                warmup_progress=warmup_progress,
+                rep_flash=rep_flash,
+            )
+
+            # draw angle plot top-right (avoids overlap with skeleton body)
             if show_plot and len(primary_angle_history) > 1:
+                from src.visualize import TOP_BAR_H
                 plot_title = f"{exercise or 'knee'} angle"
                 plot_img = create_angle_plot(primary_angle_history, title=plot_title)
                 ph, pw = plot_img.shape[:2]
                 fh, fw = frame.shape[:2]
-                # place plot at bottom-left
-                y_start = fh - ph - 10
-                x_start = 10
-                if y_start > 0 and x_start + pw < fw:
+                x_start = fw - pw - 10
+                y_start = TOP_BAR_H + 10
+                if y_start + ph < fh and x_start > 0:
                     frame[y_start:y_start + ph, x_start:x_start + pw] = plot_img
 
             cv2.imshow("Skeleton Extraction from Video", frame)
@@ -133,6 +183,13 @@ def run_live(source: int | str = 0, show_angles: bool = True,
             elif key == ord("r"):
                 classifier.reset()
                 primary_angle_history.clear()
+                skeleton_buffer.clear()
+                frame_counter = 0
+                pca_reps = 0
+                pca_label = None
+                warming_up = True
+                prev_pca_reps = 0
+                rep_flash_frames = 0
                 print("reset rep counter")
 
     finally:
