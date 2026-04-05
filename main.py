@@ -3,22 +3,70 @@ skeleton extraction from video — main entry point.
 real-time exercise detection and repetition counting using mediapipe pose estimation.
 """
 
+# Configure environment BEFORE importing any libraries
+import os
+import sys
+import contextlib
+
+# Fix 1: Qt/Wayland compatibility - prevent Qt from seeing Wayland session
+# Qt checks XDG_SESSION_TYPE and prints a warning if it's 'wayland' but QT_QPA_PLATFORM is 'xcb'
+# By removing the variable, Qt won't know about Wayland and won't print the warning
+if os.environ.get("XDG_SESSION_TYPE") == "wayland":
+    os.environ.pop("XDG_SESSION_TYPE", None)
+os.environ["QT_QPA_PLATFORM"] = "xcb"
+
+# Fix 2: MediaPipe/TensorFlow C++ logging - must be set before imports
+os.environ["TF_CPP_MIN_LOG_LEVEL"] = "3"
+os.environ["GLOG_minloglevel"] = "3"
+os.environ["ABSL_MIN_LOG_LEVEL"] = "3"
+os.environ["GRPC_VERBOSITY"] = "ERROR"
+os.environ["TF_ENABLE_ONEDNN_OPTS"] = "0"
+
+# Fix 3: Suppress C++ stderr output during library initialization
+# MediaPipe's C++ code writes to stderr before Python can configure logging
+@contextlib.contextmanager
+def suppress_stderr():
+    """Temporarily redirect stderr to /dev/null."""
+    devnull = os.open(os.devnull, os.O_WRONLY)
+    old_stderr = os.dup(2)
+    os.dup2(devnull, 2)
+    os.close(devnull)
+    try:
+        yield
+    finally:
+        os.dup2(old_stderr, 2)
+        os.close(old_stderr)
+
+# Fix 4: Initialize absl logging to prevent Python-level warnings
+from absl import logging as absl_logging
+absl_logging.set_verbosity(absl_logging.ERROR)
+absl_logging.use_python_logging()
+
 import argparse
 import signal
 import time
 from collections import deque
-import cv2
+
+# Import cv2 with stderr suppression to avoid Qt/Wayland warning
+with suppress_stderr():
+    import cv2
+
 import numpy as np
 
-from src.skeleton import (
-    PoseEstimator,
-    build_adjacency_matrix,
-    build_graph_laplacian,
-    LandmarksTemporalFilter,
-)
+# Import skeleton module (which imports MediaPipe) with stderr suppression
+# to avoid C++ warnings during TensorFlow Lite initialization
+with suppress_stderr():
+    from src.skeleton import (
+        PoseEstimator,
+        build_adjacency_matrix,
+        build_graph_laplacian,
+        LandmarksTemporalFilter,
+    )
 from src.normalize import normalize_skeleton, NormalizedSkeletonTemporalFilter
 from src.features import (
     compute_key_angles,
+    compute_body_position_features,
+    BodyPositionTracker,
     flatten_skeleton,
     euclidean_distance,
     cosine_similarity,
@@ -69,11 +117,18 @@ def run_live(source: int | str = 0, show_angles: bool = True,
     cv2.resizeWindow(window_name, max(640, window_width), max(480, window_height))
     is_fullscreen = False
 
-    estimator = PoseEstimator(min_detection_confidence=0.6, min_tracking_confidence=0.6)
+    # Suppress MediaPipe C++ warnings during model initialization
+    with suppress_stderr():
+        estimator = PoseEstimator(min_detection_confidence=0.6, min_tracking_confidence=0.6)
     classifier = ExerciseClassifier(default_fps=30.0)
-    landmarks_filter = LandmarksTemporalFilter(min_visibility=0.3, ema_alpha=0.35)
-    normalized_filter = NormalizedSkeletonTemporalFilter(alpha=0.40)
-    angle_smoother = AngleTemporalSmoother(alpha=0.45)
+    # Reduced EMA cascade with higher alpha for faster response:
+    # - landmarks_filter: primary jitter reduction, moderate smoothing
+    # - normalized_filter: secondary smoothing for stable normalization
+    # - angle_smoother: final smoothing, higher alpha for responsiveness
+    landmarks_filter = LandmarksTemporalFilter(min_visibility=0.4, ema_alpha=0.50)  # increased from 0.35
+    normalized_filter = NormalizedSkeletonTemporalFilter(alpha=0.60)  # increased from 0.40
+    angle_smoother = AngleTemporalSmoother(alpha=0.55)  # increased from 0.45
+    body_tracker = BodyPositionTracker(history_frames=5)  # NEW: track body position for jump detection
 
     # precompute the adjacency matrix and laplacian (static graph structure)
     A = build_adjacency_matrix()
@@ -102,6 +157,7 @@ def run_live(source: int | str = 0, show_angles: bool = True,
 
     print("press 'q' to quit, 'r' to reset rep counter, 'f' to toggle fullscreen")
 
+    first_frame = True  # track first frame for one-time warning suppression
     try:
         while not _shutdown_requested:
             # stop immediately if user closed the window via window controls (X button)
@@ -123,7 +179,13 @@ def run_live(source: int | str = 0, show_angles: bool = True,
                 frame = cv2.flip(frame, 1)
 
             frame_rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
-            landmarks = estimator.extract_landmarks(frame_rgb)
+            # Suppress MediaPipe warning on first inference only
+            if first_frame:
+                with suppress_stderr():
+                    landmarks = estimator.extract_landmarks(frame_rgb)
+                first_frame = False
+            else:
+                landmarks = estimator.extract_landmarks(frame_rgb)
 
             curr_time = time.time()
             dt = max(curr_time - prev_time, 1e-3)
@@ -171,9 +233,14 @@ def run_live(source: int | str = 0, show_angles: bool = True,
                 # compute joint angles using the dot product formula
                 angles_raw = compute_key_angles(normalized)
                 angles = angle_smoother.update(angles_raw)
+                
+                # compute body position features for improved detection
+                body_features_raw = compute_body_position_features(normalized)
+                body_motion = body_tracker.update(body_features_raw)
+                body_features = {**body_features_raw, **body_motion}
 
-                # update classifier with new angles using time delta
-                exercise, reps = classifier.update(angles, dt=dt)
+                # update classifier with angles AND body features
+                exercise, reps = classifier.update(angles, dt=dt, body_features=body_features)
 
                 # track primary angle for the plot
                 avg = get_primary_angle(angles, exercise)
@@ -232,6 +299,7 @@ def run_live(source: int | str = 0, show_angles: bool = True,
                 landmarks_filter.reset()
                 normalized_filter.reset()
                 angle_smoother.reset()
+                body_tracker.reset()
                 primary_angle_history.clear()
                 skeleton_buffer.clear()
                 buffer_duration_s = 0.0
@@ -270,7 +338,8 @@ def run_analysis(video_path: str, output_path: str | None = None):
         print(f"error: cannot open video '{video_path}'")
         return
 
-    estimator = PoseEstimator()
+    with suppress_stderr():
+        estimator = PoseEstimator()
     all_skeletons = []
     frame_count = 0
 

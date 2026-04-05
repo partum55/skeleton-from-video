@@ -4,6 +4,14 @@ feature extraction from skeleton sequences: joint angles, velocity, distance met
 
 import numpy as np
 
+# Landmark indices for reference
+_LEFT_SHOULDER = 11
+_RIGHT_SHOULDER = 12
+_LEFT_HIP = 23
+_RIGHT_HIP = 24
+_LEFT_ANKLE = 27
+_RIGHT_ANKLE = 28
+
 
 class AngleTemporalSmoother:
     """EMA smoother for per-frame joint angles."""
@@ -84,6 +92,98 @@ def compute_key_angles(skeleton: np.ndarray) -> dict[str, float]:
         "right_hip": compute_angle(xy[12], xy[24], xy[26]),
     }
     return angles
+
+
+def compute_body_position_features(skeleton: np.ndarray) -> dict[str, float]:
+    """Compute body position features for improved exercise detection.
+    
+    Features computed:
+    - hip_center_y: vertical position of hip midpoint (normalized 0-1)
+    - shoulder_center_y: vertical position of shoulder midpoint
+    - torso_verticality: ratio indicating if torso is vertical vs horizontal
+    - leg_spread: horizontal distance between ankles (normalized by torso length)
+    
+    These features help distinguish:
+    - Jumping (hip_y changes between frames)
+    - Push-ups (low torso_verticality = horizontal body)
+    - Standing exercises (high hip_y, high torso_verticality)
+    """
+    xy = skeleton[:, :2] if skeleton.shape[1] > 2 else skeleton
+    
+    # Hip and shoulder centers
+    hip_center = (xy[_LEFT_HIP] + xy[_RIGHT_HIP]) / 2.0
+    shoulder_center = (xy[_LEFT_SHOULDER] + xy[_RIGHT_SHOULDER]) / 2.0
+    
+    # Torso vector and length
+    torso_vec = shoulder_center - hip_center
+    torso_length = float(np.linalg.norm(torso_vec))
+    if torso_length < 1e-6:
+        torso_length = 1.0
+    
+    # Torso verticality: 1.0 = perfectly vertical, 0.0 = perfectly horizontal
+    # Based on ratio of vertical to total torso displacement
+    torso_verticality = abs(torso_vec[1]) / torso_length
+    
+    # Leg spread normalized by torso length
+    ankle_spread = abs(xy[_LEFT_ANKLE, 0] - xy[_RIGHT_ANKLE, 0])
+    leg_spread = ankle_spread / torso_length
+    
+    # Body y-position (average of key joints)
+    body_y = (hip_center[1] + shoulder_center[1]) / 2.0
+    
+    return {
+        "hip_center_y": float(hip_center[1]),
+        "shoulder_center_y": float(shoulder_center[1]),
+        "torso_verticality": float(torso_verticality),
+        "leg_spread": float(leg_spread),
+        "body_y": float(body_y),
+        "torso_length": float(torso_length),
+    }
+
+
+class BodyPositionTracker:
+    """Track body position changes over time for jump detection."""
+    
+    def __init__(self, history_frames: int = 5):
+        self._history_frames = max(2, history_frames)
+        self._hip_y_history: list[float] = []
+        self._body_y_history: list[float] = []
+    
+    def reset(self) -> None:
+        self._hip_y_history.clear()
+        self._body_y_history.clear()
+    
+    def update(self, features: dict[str, float]) -> dict[str, float]:
+        """Update tracker and return velocity/displacement features."""
+        hip_y = features.get("hip_center_y", 0.5)
+        body_y = features.get("body_y", 0.5)
+        
+        self._hip_y_history.append(hip_y)
+        self._body_y_history.append(body_y)
+        
+        # Keep limited history
+        if len(self._hip_y_history) > self._history_frames:
+            self._hip_y_history.pop(0)
+        if len(self._body_y_history) > self._history_frames:
+            self._body_y_history.pop(0)
+        
+        # Compute velocity (positive = moving down in image coords)
+        hip_velocity = 0.0
+        body_velocity = 0.0
+        if len(self._hip_y_history) >= 2:
+            hip_velocity = self._hip_y_history[-1] - self._hip_y_history[-2]
+            body_velocity = self._body_y_history[-1] - self._body_y_history[-2]
+        
+        # Compute recent displacement (max - min over history)
+        hip_displacement = 0.0
+        if len(self._hip_y_history) >= 2:
+            hip_displacement = max(self._hip_y_history) - min(self._hip_y_history)
+        
+        return {
+            "hip_y_velocity": float(hip_velocity),
+            "body_y_velocity": float(body_velocity),
+            "hip_y_displacement": float(hip_displacement),
+        }
 
 
 def compute_velocity(skeleton_prev: np.ndarray, skeleton_curr: np.ndarray) -> np.ndarray:

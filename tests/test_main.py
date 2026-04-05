@@ -86,6 +86,16 @@ def _pushup_down_angles() -> dict[str, float]:
     }
 
 
+def _pushup_body_features() -> dict[str, float]:
+    """body features for horizontal push-up position."""
+    return {
+        "torso_verticality": 0.2,  # horizontal body
+        "leg_spread": 0.3,
+        "hip_center_y": 0.7,
+        "body_y": 0.7,
+    }
+
+
 def _jj_up_angles() -> dict[str, float]:
     """angles for jumping jack with arms up."""
     return {
@@ -346,10 +356,13 @@ class TestClassifier:
         assert clf.rep_count >= 1
 
     def test_pushup_detection(self):
-        """pushup down position should be detected after confidence frames."""
+        """pushup down position should be detected after confidence frames.
+        
+        Requires body_features with low torso_verticality to indicate horizontal body.
+        """
         clf = ExerciseClassifier()
         for _ in range(30):
-            clf.update(_pushup_down_angles())
+            clf.update(_pushup_down_angles(), body_features=_pushup_body_features())
         assert clf.current_exercise == "pushup"
 
     def test_jumping_jack_detection(self):

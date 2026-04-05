@@ -3,6 +3,20 @@ pose estimation via mediapipe and skeleton graph representation.
 """
 
 import os
+import logging
+
+# Configure C++ logging BEFORE importing mediapipe
+os.environ.setdefault("TF_CPP_MIN_LOG_LEVEL", "3")
+os.environ.setdefault("GLOG_minloglevel", "3")
+os.environ.setdefault("ABSL_MIN_LOG_LEVEL", "3")
+
+# Suppress Python-level logging from mediapipe
+logging.getLogger("mediapipe").setLevel(logging.ERROR)
+
+# Initialize absl logging to suppress warnings
+from absl import logging as absl_logging
+absl_logging.set_verbosity(absl_logging.ERROR)
+absl_logging.use_python_logging()
 
 import numpy as np
 import mediapipe as mp

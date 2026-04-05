@@ -94,13 +94,18 @@ class TestFSMAndTimeBasedLogic:
         }
 
     def _run_squat_cycles(self, clf: ExerciseClassifier, cycles: int, dt: float) -> tuple[str | None, int]:
+        # Initial frames in squat position to trigger exercise detection
         for _ in range(int(0.35 / dt)):
             clf.update(self._squat_frame(85.0, hip=100.0), dt=dt)
+        # Perform full rep cycles with angles well past thresholds
+        # Squat thresholds: down=90°, up=160°
+        # Use 80° (clearly below down) and 175° (clearly above up)
         for _ in range(cycles):
-            for _ in range(int(0.25 / dt)):
-                clf.update(self._squat_frame(90.0, hip=100.0), dt=dt)
-            for _ in range(int(0.25 / dt)):
-                clf.update(self._squat_frame(170.0, hip=170.0), dt=dt)
+            for _ in range(int(0.30 / dt)):  # slightly longer phases for validation
+                clf.update(self._squat_frame(80.0, hip=95.0), dt=dt)  # down position
+            for _ in range(int(0.30 / dt)):
+                clf.update(self._squat_frame(175.0, hip=175.0), dt=dt)  # up position
+        return clf.current_exercise, clf.rep_count
         return clf.current_exercise, clf.rep_count
 
     def test_classifier_uses_time_not_frame_count(self) -> None:
