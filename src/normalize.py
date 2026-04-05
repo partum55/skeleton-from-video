@@ -390,3 +390,39 @@ def normalize_sequence(
         normalize_skeleton(s, reference_pose, apply_procrustes)
         for s in skeletons
     ])
+
+
+def ema_smooth_skeleton(
+    skeleton: NDArray[np.float64],
+    prev_skeleton: NDArray[np.float64] | None = None,
+    alpha: float = 0.4,
+) -> NDArray[np.float64]:
+    """Apply EMA smoothing to a normalized skeleton (33×2)."""
+    sk = np.asarray(skeleton, dtype=np.float64)
+    if sk.ndim != 2 or sk.shape != (33, 2):
+        raise ValueError(f"skeleton must have shape (33, 2), got {sk.shape}")
+
+    a = float(np.clip(alpha, 0.01, 1.0))
+    if prev_skeleton is None:
+        return sk.copy()
+
+    prev = np.asarray(prev_skeleton, dtype=np.float64)
+    if prev.shape != sk.shape:
+        return sk.copy()
+    return a * sk + (1.0 - a) * prev
+
+
+class NormalizedSkeletonTemporalFilter:
+    """Stateful EMA filter for normalized skeleton sequences."""
+
+    def __init__(self, alpha: float = 0.4):
+        self.alpha = float(np.clip(alpha, 0.01, 1.0))
+        self._prev: NDArray[np.float64] | None = None
+
+    def reset(self) -> None:
+        self._prev = None
+
+    def update(self, skeleton: NDArray[np.float64]) -> NDArray[np.float64]:
+        smoothed = ema_smooth_skeleton(skeleton, prev_skeleton=self._prev, alpha=self.alpha)
+        self._prev = smoothed
+        return smoothed

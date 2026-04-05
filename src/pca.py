@@ -28,6 +28,67 @@ from src.linalg_utils import center_matrix, select_n_components
 DEFAULT_VARIANCE_THRESHOLD: float = 0.95
 
 
+def align_components_to_reference(
+    components: NDArray[np.float64],
+    reference_components: NDArray[np.float64] | None,
+) -> NDArray[np.float64]:
+    """Align PCA components to a reference basis (order + sign).
+
+    This reduces instability when PCA is re-fitted on a sliding window.
+    """
+    comps = np.asarray(components, dtype=np.float64)
+    if reference_components is None:
+        return comps
+
+    ref = np.asarray(reference_components, dtype=np.float64)
+    if comps.ndim != 2 or ref.ndim != 2 or comps.shape[0] != ref.shape[0]:
+        return comps
+
+    k_new = comps.shape[1]
+    k_ref = ref.shape[1]
+    if k_new == 0 or k_ref == 0:
+        return comps
+
+    sim = np.abs(ref.T @ comps)  # (k_ref, k_new)
+    aligned = np.zeros_like(comps)
+
+    used_ref: set[int] = set()
+    used_new: set[int] = set()
+    slots = min(k_new, k_ref)
+
+    for out_idx in range(slots):
+        best = None
+        best_val = -np.inf
+        for ref_idx in range(k_ref):
+            if ref_idx in used_ref:
+                continue
+            for new_idx in range(k_new):
+                if new_idx in used_new:
+                    continue
+                val = sim[ref_idx, new_idx]
+                if val > best_val:
+                    best_val = val
+                    best = (ref_idx, new_idx)
+        if best is None:
+            break
+        ref_idx, new_idx = best
+        vec = comps[:, new_idx].copy()
+        if float(np.dot(ref[:, ref_idx], vec)) < 0.0:
+            vec *= -1.0
+        aligned[:, out_idx] = vec
+        used_ref.add(ref_idx)
+        used_new.add(new_idx)
+
+    out_idx = slots
+    for new_idx in range(k_new):
+        if new_idx in used_new:
+            continue
+        aligned[:, out_idx] = comps[:, new_idx]
+        out_idx += 1
+
+    return aligned
+
+
 class PCA:
     """Principal Component Analysis via manual SVD.
 
@@ -77,7 +138,11 @@ class PCA:
     # Public API
     # ------------------------------------------------------------------
 
-    def fit(self, X: NDArray[np.float64]) -> "PCA":
+    def fit(
+        self,
+        X: NDArray[np.float64],
+        reference_components: NDArray[np.float64] | None = None,
+    ) -> "PCA":
         """Fit PCA on a data matrix X.
 
         Parameters
@@ -109,7 +174,7 @@ class PCA:
         k = select_n_components(s, self.variance_threshold)
 
         self.mean_ = mu
-        self.components_ = Vt[:k].T          # shape (d, k)
+        self.components_ = align_components_to_reference(Vt[:k].T, reference_components)
         self.singular_values_ = s[:k]        # shape (k,)
         self.n_components_ = k
         self.variance_ratio_ = (s[:k] ** 2) / (s**2).sum()  # shape (k,)
@@ -135,7 +200,11 @@ class PCA:
         X = np.asarray(X, dtype=np.float64)
         return (X - self.mean_) @ self.components_
 
-    def fit_transform(self, X: NDArray[np.float64]) -> NDArray[np.float64]:
+    def fit_transform(
+        self,
+        X: NDArray[np.float64],
+        reference_components: NDArray[np.float64] | None = None,
+    ) -> NDArray[np.float64]:
         """Fit and project in one call.
 
         Equivalent to ``self.fit(X).transform(X)`` but avoids centering twice.
@@ -151,7 +220,7 @@ class PCA:
             Projection matrix of shape (T, k).
         """
         X = np.asarray(X, dtype=np.float64)
-        self.fit(X)
+        self.fit(X, reference_components=reference_components)
         # reuse the already-centred matrix implicitly through transform
         return (X - self.mean_) @ self.components_
 

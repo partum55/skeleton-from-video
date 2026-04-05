@@ -24,6 +24,110 @@ LANDMARK_NAMES = {
 
 NUM_LANDMARKS = 33
 
+
+def filter_landmarks_by_visibility(
+    landmarks: np.ndarray,
+    prev_landmarks: np.ndarray | None = None,
+    min_visibility: float = 0.5,
+) -> np.ndarray:
+    """Replace low-visibility joints using the previous frame or a fallback.
+
+    Parameters
+    ----------
+    landmarks:
+        Array of shape (33, 3) with columns [x, y, visibility].
+    prev_landmarks:
+        Previous filtered/smoothed landmarks of shape (33, 3).
+    min_visibility:
+        Visibility threshold below which a joint is considered unreliable.
+
+    Returns
+    -------
+    filtered:
+        Landmarks with unstable joints replaced in x/y coordinates.
+    """
+    arr = np.asarray(landmarks, dtype=np.float64)
+    if arr.ndim != 2 or arr.shape[0] != NUM_LANDMARKS:
+        raise ValueError(f"landmarks must have shape (33, 3), got {arr.shape}")
+    if arr.shape[1] < 3:
+        return arr.copy()
+
+    filtered = arr.copy()
+    low_vis_mask = filtered[:, 2] < min_visibility
+    if not np.any(low_vis_mask):
+        return filtered
+
+    if prev_landmarks is not None:
+        prev = np.asarray(prev_landmarks, dtype=np.float64)
+        if prev.shape[0] == NUM_LANDMARKS and prev.shape[1] >= 2:
+            filtered[low_vis_mask, :2] = prev[low_vis_mask, :2]
+            if prev.shape[1] >= 3:
+                filtered[low_vis_mask, 2] = np.maximum(
+                    filtered[low_vis_mask, 2],
+                    prev[low_vis_mask, 2],
+                )
+            return filtered
+
+    visible_mask = ~low_vis_mask
+    if np.any(visible_mask):
+        fallback_xy = filtered[visible_mask, :2].mean(axis=0)
+    else:
+        fallback_xy = np.array([0.5, 0.5], dtype=np.float64)
+    filtered[low_vis_mask, :2] = fallback_xy
+    return filtered
+
+
+def ema_smooth_landmarks(
+    landmarks: np.ndarray,
+    prev_smoothed: np.ndarray | None = None,
+    alpha: float = 0.35,
+) -> np.ndarray:
+    """Apply EMA smoothing to landmark coordinates.
+
+    The update is: s_t = alpha * x_t + (1 - alpha) * s_{t-1}.
+    """
+    current = np.asarray(landmarks, dtype=np.float64)
+    if current.ndim != 2 or current.shape[0] != NUM_LANDMARKS:
+        raise ValueError(f"landmarks must have shape (33, C), got {current.shape}")
+
+    a = float(np.clip(alpha, 0.01, 1.0))
+    if prev_smoothed is None:
+        return current.copy()
+
+    prev = np.asarray(prev_smoothed, dtype=np.float64)
+    if prev.shape != current.shape:
+        return current.copy()
+
+    smoothed = current.copy()
+    smoothed[:, :2] = a * current[:, :2] + (1.0 - a) * prev[:, :2]
+    if smoothed.shape[1] >= 3:
+        smoothed[:, 2] = np.maximum(current[:, 2], prev[:, 2])
+    return smoothed
+
+
+class LandmarksTemporalFilter:
+    """Visibility-aware temporal filter for MediaPipe pose landmarks."""
+
+    def __init__(self, min_visibility: float = 0.5, ema_alpha: float = 0.35):
+        self.min_visibility = float(min_visibility)
+        self.ema_alpha = float(ema_alpha)
+        self._prev: np.ndarray | None = None
+
+    def reset(self) -> None:
+        self._prev = None
+
+    def update(self, landmarks: np.ndarray | None) -> np.ndarray | None:
+        if landmarks is None:
+            return None
+        filtered = filter_landmarks_by_visibility(
+            landmarks,
+            prev_landmarks=self._prev,
+            min_visibility=self.min_visibility,
+        )
+        smoothed = ema_smooth_landmarks(filtered, prev_smoothed=self._prev, alpha=self.ema_alpha)
+        self._prev = smoothed
+        return smoothed
+
 # bone connections defining the skeleton graph edges
 SKELETON_CONNECTIONS = [
     (0, 1), (1, 2), (2, 3), (3, 7),

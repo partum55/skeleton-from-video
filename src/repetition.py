@@ -351,3 +351,58 @@ def count_reps_and_classify(
     label = classify_exercise(Z, w_hat) if Z.shape[1] >= 2 else None
 
     return r, label, omega_hat
+
+
+def estimate_pca_confidence(
+    z1: NDArray[np.float64],
+    w_hat: NDArray[np.float64],
+    residual: float,
+) -> float:
+    """Estimate confidence of PCA-based periodic motion fit in [0, 1]."""
+    signal = np.asarray(z1, dtype=np.float64)
+    amplitude = float(np.sqrt(w_hat[0] ** 2 + w_hat[1] ** 2))
+    signal_std = float(np.std(signal))
+    if signal_std < 1e-8:
+        return 0.0
+
+    quality = 1.0 - float(residual) / (signal_std * np.sqrt(len(signal)) + 1e-8)
+    amp_ratio = amplitude / (signal_std + 1e-8)
+    conf = 0.6 * np.clip(quality, 0.0, 1.0) + 0.4 * np.clip(amp_ratio / 2.0, 0.0, 1.0)
+    return float(np.clip(conf, 0.0, 1.0))
+
+
+def count_reps_and_classify_with_confidence(
+    Z: NDArray[np.float64],
+    min_reps: int = 1,
+    max_reps: int = 30,
+    n_steps: int = 500,
+) -> tuple[int, str | None, float, float]:
+    """Extended PCA pipeline returning (reps, label, omega, confidence)."""
+    Z = np.asarray(Z, dtype=np.float64)
+    if Z.ndim != 2:
+        raise ValueError(f"Z must be 2-D, got shape {Z.shape}")
+
+    z1 = Z[:, 0]
+    omega_hat, w_hat, residual = find_best_frequency(z1, min_reps, max_reps, n_steps)
+    reps = count_repetitions(omega_hat, len(z1))
+    label = classify_exercise(Z, w_hat) if Z.shape[1] >= 2 else None
+    confidence = estimate_pca_confidence(z1, w_hat, residual)
+    return reps, label, omega_hat, confidence
+
+
+def fuse_exercise_labels(
+    angle_label: str | None,
+    pca_label: str | None,
+    pca_confidence: float,
+    min_pca_confidence: float = 0.65,
+) -> str | None:
+    """Fuse angle- and PCA-based labels with confidence gating."""
+    if angle_label is None and pca_confidence >= min_pca_confidence:
+        return pca_label
+    if pca_label is None:
+        return angle_label
+    if angle_label == pca_label:
+        return angle_label
+    if pca_confidence >= 0.9:
+        return pca_label
+    return angle_label

@@ -5,6 +5,41 @@ feature extraction from skeleton sequences: joint angles, velocity, distance met
 import numpy as np
 
 
+class AngleTemporalSmoother:
+    """EMA smoother for per-frame joint angles."""
+
+    def __init__(self, alpha: float = 0.4):
+        self.alpha = float(np.clip(alpha, 0.01, 1.0))
+        self._prev: dict[str, float] | None = None
+
+    def reset(self) -> None:
+        self._prev = None
+
+    def update(self, angles: dict[str, float]) -> dict[str, float]:
+        if self._prev is None:
+            self._prev = dict(angles)
+            return dict(angles)
+
+        smoothed: dict[str, float] = {}
+        for key, value in angles.items():
+            prev_value = self._prev.get(key, value)
+            smoothed_value = self.alpha * float(value) + (1.0 - self.alpha) * float(prev_value)
+            smoothed[key] = smoothed_value
+        self._prev = smoothed
+        return smoothed
+
+
+def get_primary_angle(angles: dict[str, float], exercise: str | None) -> float:
+    """Return a representative angle for plotting/debug output."""
+    if exercise == "squat":
+        return (angles["left_knee"] + angles["right_knee"]) / 2.0
+    if exercise == "pushup":
+        return (angles["left_elbow"] + angles["right_elbow"]) / 2.0
+    if exercise == "jumping_jack":
+        return (angles["left_shoulder"] + angles["right_shoulder"]) / 2.0
+    return (angles["left_knee"] + angles["right_knee"]) / 2.0
+
+
 def compute_angle(a: np.ndarray, b: np.ndarray, c: np.ndarray) -> float:
     """compute the angle at joint b formed by vectors ba and bc.
 
