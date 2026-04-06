@@ -1,21 +1,22 @@
 # Skeleton Extraction from Video
 
-**Authors:** \
+**Authors:**
+
 [Oleksii Lasiichuk](https://www.github.com/Oleksii-Lasiichuk), \
-[Oleksandr Lykhanskyi](https://www.github.com), \
-[Nazar Mykhailyshchuk](https://www.github.com/partum55) 
+[Oleksandr Lykhanskyi](https://github.com/Cossack223), \
+[Nazar Mykhailyshchuk](https://www.github.com/partum55)
 
-**Links to our videos:** 
-- [Oleksii](https://example.com/video1), 
+**Links to our videos:**
+
+- [Oleksii](https://example.com/video1),
 - [Oleksandr](https://example.com/video2),
-- [Nazar](https://example.com/video3) 
-
+- [Nazar](https://example.com/video3)
 
 ## Description
 
 A real-time computer vision pipeline that extracts human skeletons from video using MediaPipe and then applies **manually implemented linear algebra** to normalize poses, reduce dimensionality, detect exercises (squats, push-ups, jumping jacks), and count repetitions.
 
-MediaPipe is used **only** as a landmark detector (it maps each frame to 33 body-joint coordinates). Everything after detection is built from explicit matrix operations:
+MediaPipe is used only as a landmark detector (it maps each frame to 33 body-joint coordinates). Everything after detection is built from explicit matrix operations:
 
 1. **Procrustes normalization via SVD** — removes camera angle, position, and distance effects by finding the optimal 2x2 rotation matrix through Singular Value Decomposition.
 2. **PCA feature extraction via numpy SVD** — reduces the 66-dimensional pose vector to a small number of principal components using `numpy.linalg.svd` directly (no scikit-learn).
@@ -25,27 +26,36 @@ MediaPipe is used **only** as a landmark detector (it maps each frame to 33 body
 
 ## Requirements
 
-- Python 3.10+
+- Python3
 - pip
 - A webcam (for live mode) or a video file
-- macOS / Linux / Windows
 
 ## Installation
 
+Clone the repository:
+
 ```bash
-# Clone the repository
 git clone https://github.com/partum55/skeleton-from-video.git
 cd skeleton-from-video
+```
 
-# Create and activate a virtual environment
-python3 -m venv venv
+Create and activate a virtual environment on macOS/Linux:
 
-# macOS / Linux:
-source venv/bin/activate
-# Windows:
-venv\Scripts\activate
+```bash
+python3 -m venv .venv
+source .venv/bin/activate
+```
 
-# Install dependencies
+Create and activate a virtual environment on Windows:
+
+```bash
+python3 -m venv .venv
+.venv\Scripts\activate
+```
+
+Install dependencies
+
+```bash
 pip install -r requirements.txt
 ```
 
@@ -80,7 +90,7 @@ Extracts all skeletons from a video file and saves them as a NumPy array (`T x 3
 ### All CLI flags
 
 | Flag | Default | Description |
-|------|---------|-------------|
+| ------ | --------- | ------------- |
 | `--source` | `0` (webcam) | Video source: `0` for webcam, or path to a video file |
 | `--mode` | `live` | `live` for real-time detection, `analyze` for offline processing |
 | `--output` | none | Output path for `.npy` skeleton data (analyze mode only) |
@@ -95,15 +105,15 @@ Extracts all skeletons from a video file and saves them as a NumPy array (`T x 3
 
 ### Keyboard controls (live mode)
 
-| Key | Action |
-|-----|--------|
-| `q` | Quit |
+| Key | Action                            |
+| --- | --------------------------------- |
+| `q` | Quit                              |
 | `r` | Reset rep counter and all filters |
-| `f` | Toggle fullscreen |
+| `f` | Toggle fullscreen                 |
 
 ## Pipeline
 
-```
+```raw
 Raw video frame
     |
     v
@@ -118,7 +128,7 @@ Raw video frame
     v
 [Features] Joint angles via dot product, body position features
     |
-    v                                               |
+    |                                               |
     v                                               v
 [Angle-based classifier]                [PCA on sliding window]
   FSM with multi-layer validation         Manual SVD -> project to k dims
@@ -138,20 +148,21 @@ Raw video frame
 ### Step-by-step walkthrough
 
 1. **Capture frame** — OpenCV reads a frame from the webcam or video file.
-2. **Pose estimation** — MediaPipe detects 33 body keypoints and returns `S(t) in R^{33x3}` (x, y, visibility).
+2. **Pose estimation** — MediaPipe detects 33 body keypoints and returns $S(t) \in \mathbb{R}^{33 \times 3}$ (x, y, visibility).
 3. **Temporal filtering** — An exponential moving average (EMA) smooths jittery landmarks; low-visibility joints fall back to the previous frame's values.
 4. **Normalization** — The skeleton is translated so the hip center is at the origin, scaled so the torso length equals 1, and optionally rotated to align with a reference pose via Procrustes/SVD.
-5. **Joint angles** — Angles at 8 joints (left/right elbows, knees, shoulders, hips) are computed using the dot-product formula: `theta = arccos((u . v) / (||u|| * ||v||))`.
+5. **Joint angles** — Angles at 8 joints (left/right elbows, knees, shoulders, hips) are computed using the dot-product formula:
+$$\theta = \arccos\left(\frac{\mathbf{u} \cdot \mathbf{v}}{\|\mathbf{u}\| \|\mathbf{v}\|}\right)$$
 6. **Body features** — Torso verticality and leg spread are computed to distinguish exercises (e.g., standing vs. push-up position).
 7. **FSM classification** — A finite-state machine with two states (up/down) detects exercise type and counts reps using angle thresholds with multi-layer validation (minimum phase time, hold time, velocity check, amplitude check, hysteresis).
-8. **PCA + sinusoidal fitting** — A sliding window of normalized skeletons is flattened to `R^{T x 66}`, PCA reduces it to k dimensions (95% variance), and a sinusoidal model `z1(t) = w1*sin(wt) + w2*cos(wt) + w3` is fit via least-squares to estimate rep frequency.
+8. **PCA + sinusoidal fitting** — A sliding window of normalized skeletons is flattened to $\mathbb{R}^{T \times 66}$, PCA reduces it to $k$ dimensions (95% variance), and a sinusoidal model $z_1(t) = w_1\sin(\omega t) + w_2\cos(\omega t) + w_3$ is fit via least-squares to estimate rep frequency.
 9. **Label fusion** — The angle-based label and PCA-based label are combined using the PCA confidence score.
 10. **Visualization** — The skeleton, exercise name, rep count, FPS, and an angle-vs-time plot are drawn on the frame.
 
 ## Linear Algebra Concepts Implemented Manually
 
 | Concept | Where in Code | What It Does |
-|---------|---------------|--------------|
+| -------- | --------------- | -------------- |
 | **SVD (Singular Value Decomposition)** | `src/normalize.py`, `src/pca.py` | Procrustes alignment (optimal rotation) and PCA (dimensionality reduction) |
 | **Rotation matrices** | `src/normalize.py` | 2x2 orthogonal matrix with det=+1 from SVD, applied to align poses |
 | **Affine transformations** | `src/normalize.py` | Translation (hip centering), scaling (torso normalization) |
@@ -199,17 +210,8 @@ skeleton-from-video/
 168 unit tests verify every linear algebra property:
 
 ```bash
-# Activate virtual environment first
 source venv/bin/activate
-
-# Run all tests
 python -m pytest tests/ -v
-
-# Run a specific test file
-python -m pytest tests/test_pca.py -v
-
-# Run a specific test class
-python -m pytest tests/test_normalize.py::TestProcrustesRotation -v
 ```
 
 ### What the tests cover
@@ -225,7 +227,7 @@ python -m pytest tests/test_normalize.py::TestProcrustesRotation -v
 ## Dependencies
 
 | Library | Purpose |
-|---------|---------|
+| -------- | -------- |
 | `mediapipe` | Pose estimation — detects 33 keypoints per frame |
 | `opencv-python` | Video capture, frame processing, drawing |
 | `numpy` | All matrix/vector operations (SVD, dot products, norms, etc.) |
