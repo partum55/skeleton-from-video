@@ -1,9 +1,18 @@
 # Skeleton Extraction from Video
 
-**Authors:** [Oleksii Lasiichuk](https://www.github.com/Oleksii-Lasiichuk), [Oleksandr Lykhanskyi](https://www.github.com), [Nazar Mykhailyshchuk](https://www.github.com/partum55)
+**Authors:** 
+[Oleksii Lasiichuk](https://www.github.com/Oleksii-Lasiichuk), \
+[Oleksandr Lykhanskyi](https://www.github.com), \
+[Nazar Mykhailyshchuk](https://www.github.com/partum55) \
 **Group:** AI-2
 **Course:** Linear Algebra for Data Science
 **Date:** April 2026
+
+**Links to our videos:**
+- [Oleksii](https://example.com/video1)
+- [Oleksandr](https://example.com/video2)
+- [Nazar](https://example.com/video3)
+
 
 ## Description
 
