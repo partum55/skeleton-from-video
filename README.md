@@ -3,12 +3,12 @@
 **Authors:** \
 [Oleksii Lasiichuk](https://www.github.com/Oleksii-Lasiichuk), \
 [Oleksandr Lykhanskyi](https://www.github.com), \
-[Nazar Mykhailyshchuk](https://www.github.com/partum55) \
+[Nazar Mykhailyshchuk](https://www.github.com/partum55) 
 
-**Links to our videos:**\
-- [Oleksii](https://example.com/video1)\
-- [Oleksandr](https://example.com/video2)\
-- [Nazar](https://example.com/video3)\
+**Links to our videos:** 
+- [Oleksii](https://example.com/video1), 
+- [Oleksandr](https://example.com/video2),
+- [Nazar](https://example.com/video3) 
 
 
 ## Description
