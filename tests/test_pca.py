@@ -46,9 +46,7 @@ def _make_isotropic_data(
     return rng.standard_normal((n_frames, n_features)).astype(np.float64)
 
 
-# ---------------------------------------------------------------------------
 # linalg_utils.center_matrix
-# ---------------------------------------------------------------------------
 
 class TestCenterMatrix:
     def test_output_shape(self) -> None:
@@ -74,9 +72,7 @@ class TestCenterMatrix:
             center_matrix(np.ones(10))
 
 
-# ---------------------------------------------------------------------------
 # linalg_utils.select_n_components
-# ---------------------------------------------------------------------------
 
 class TestSelectNComponents:
     def test_perfect_single_component(self) -> None:
@@ -111,9 +107,7 @@ class TestSelectNComponents:
             select_n_components(np.ones((3, 3)))
 
 
-# ---------------------------------------------------------------------------
 # linalg_utils.flatten_poses
-# ---------------------------------------------------------------------------
 
 class TestFlattenPoses:
     def test_output_shape(self) -> None:
@@ -135,9 +129,7 @@ class TestFlattenPoses:
             flatten_poses(np.zeros((10, 66)))
 
 
-# ---------------------------------------------------------------------------
 # PCA: orthonormality of V_k
-# ---------------------------------------------------------------------------
 
 class TestPCAOrthonormality:
     """V_kᵀ V_k must equal the k×k identity matrix."""
@@ -164,9 +156,7 @@ class TestPCAOrthonormality:
         np.testing.assert_allclose(norms, np.ones_like(norms), atol=1e-10)
 
 
-# ---------------------------------------------------------------------------
 # PCA: zero-mean projections
-# ---------------------------------------------------------------------------
 
 class TestPCAZeroMeanProjection:
     """Z = X̃ V_k, and X̃ is already zero-mean, so Z must be zero-mean."""
@@ -189,9 +179,7 @@ class TestPCAZeroMeanProjection:
         assert Z.shape == (N_FRAMES, pca.n_components_)
 
 
-# ---------------------------------------------------------------------------
 # PCA: variance retention
-# ---------------------------------------------------------------------------
 
 class TestPCAVarianceRetention:
     """Cumulative variance ratio must reach the requested threshold."""
@@ -223,9 +211,7 @@ class TestPCAVarianceRetention:
         assert np.all(s[:-1] >= s[1:]), "singular values must be non-increasing"
 
 
-# ---------------------------------------------------------------------------
 # PCA: reconstruction error decreases with k
-# ---------------------------------------------------------------------------
 
 class TestPCAReconstructionError:
     """‖X̃ − Z V_kᵀ‖_F must be non-increasing as k grows."""
@@ -265,9 +251,7 @@ class TestPCAReconstructionError:
         assert err < 1e-9
 
 
-# ---------------------------------------------------------------------------
 # PCA: interface correctness
-# ---------------------------------------------------------------------------
 
 class TestPCAInterface:
     def test_fit_returns_self(self) -> None:
@@ -310,9 +294,7 @@ class TestPCAInterface:
         assert Z.shape[1] == pca.n_components_
 
 
-# ---------------------------------------------------------------------------
 # PCA: edge cases and error handling
-# ---------------------------------------------------------------------------
 
 class TestPCAEdgeCases:
     def test_transform_before_fit_raises(self) -> None:

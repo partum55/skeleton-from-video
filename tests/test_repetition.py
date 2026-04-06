@@ -49,9 +49,7 @@ def _make_Z(
     return np.column_stack([z1, z2, z3]).astype(np.float64)
 
 
-# ---------------------------------------------------------------------------
 # Design matrix
-# ---------------------------------------------------------------------------
 
 class TestBuildDesignMatrix:
     def test_shape(self) -> None:
@@ -85,9 +83,7 @@ class TestBuildDesignMatrix:
             build_design_matrix(omega=0.5, T=0)
 
 
-# ---------------------------------------------------------------------------
 # Least-squares fit for one frequency
-# ---------------------------------------------------------------------------
 
 class TestFitFrequency:
     def test_residual_is_non_negative(self) -> None:
@@ -133,9 +129,7 @@ class TestFitFrequency:
         assert res_wrong > res_true
 
 
-# ---------------------------------------------------------------------------
-# Grid search — core Developer 3 contribution
-# ---------------------------------------------------------------------------
+# Grid search
 
 class TestFindBestFrequency:
     """The grid search must recover the known repetition frequency."""
@@ -192,9 +186,7 @@ class TestFindBestFrequency:
             find_best_frequency(np.zeros((50, 2)))
 
 
-# ---------------------------------------------------------------------------
 # Repetition count formula
-# ---------------------------------------------------------------------------
 
 class TestCountRepetitions:
     @pytest.mark.parametrize("true_reps,T", [
@@ -214,9 +206,7 @@ class TestCountRepetitions:
         assert isinstance(result, int)
 
 
-# ---------------------------------------------------------------------------
 # Classification
-# ---------------------------------------------------------------------------
 
 class TestClassifyExercise:
     def _w_hat(self, amplitude: float = 0.5) -> NDArray[np.float64]:
@@ -255,9 +245,7 @@ class TestClassifyExercise:
         assert label in EXERCISES or label is None
 
 
-# ---------------------------------------------------------------------------
 # Full pipeline
-# ---------------------------------------------------------------------------
 
 class TestFullPipeline:
     def test_output_types(self) -> None:
