@@ -9,7 +9,7 @@
 **Links to our videos:**
 
 - [Oleksii](https://youtu.be/gQ24zIjhJoM?si=AE2emVeSdwU5wQEx),
-- [Oleksandr](https://example.com/video2),
+- [Oleksandr](https://www.youtube.com/watch?v=Kr5_XYvBAN0),
 - [Nazar](https://example.com/video3)
 
 ## Description
