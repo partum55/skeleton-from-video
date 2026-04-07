@@ -8,7 +8,7 @@
 
 **Links to our videos:**
 
-- [Oleksii](https://example.com/video1),
+- [Oleksii](https://youtu.be/gQ24zIjhJoM?si=AE2emVeSdwU5wQEx),
 - [Oleksandr](https://example.com/video2),
 - [Nazar](https://example.com/video3)
 
