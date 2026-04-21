@@ -10,7 +10,7 @@
 
 - [Oleksii](https://youtu.be/gQ24zIjhJoM?si=AE2emVeSdwU5wQEx),
 - [Oleksandr](https://www.youtube.com/watch?v=Kr5_XYvBAN0),
-- [Nazar](https://example.com/video3)
+- [Nazar](https://www.youtube.com/watch?v=JxHvokqW4Mo)
 
 ## Description
 
