@@ -11,12 +11,21 @@ os.environ.setdefault("ABSL_MIN_LOG_LEVEL", "3")
 
 logging.getLogger("mediapipe").setLevel(logging.ERROR)
 
-from absl import logging as absl_logging
-absl_logging.set_verbosity(absl_logging.ERROR)
-absl_logging.use_python_logging()
+try:
+    from absl import logging as absl_logging
+except ModuleNotFoundError:
+    absl_logging = None
+
+if absl_logging is not None:
+    absl_logging.set_verbosity(absl_logging.ERROR)
+    absl_logging.use_python_logging()
 
 import numpy as np
-import mediapipe as mp
+
+try:
+    import mediapipe as mp
+except ModuleNotFoundError:
+    mp = None
 
 
 # mediapipe pose landmark indices for reference
@@ -160,6 +169,11 @@ class PoseEstimator:
                  min_detection_confidence: float = 0.5,
                  min_tracking_confidence: float = 0.5,
                  running_mode: str = "video"):
+        if mp is None:
+            raise ModuleNotFoundError(
+                "mediapipe is required to use PoseEstimator. Install it with `pip install mediapipe`."
+            )
+
         model_path = model_path or _DEFAULT_MODEL_PATH
         if not os.path.exists(model_path):
             raise FileNotFoundError(

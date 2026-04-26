@@ -9,6 +9,12 @@ import sys
 import atexit
 import contextlib
 
+try:
+    from absl import logging as absl_logging
+except ModuleNotFoundError:
+    absl_logging = None
+
+
 # suppress Qt/Wayland compatibility warning on linux
 if os.environ.get("XDG_SESSION_TYPE") == "wayland":
     os.environ.pop("XDG_SESSION_TYPE", None)
@@ -21,10 +27,16 @@ os.environ["ABSL_MIN_LOG_LEVEL"] = "3"
 os.environ["GRPC_VERBOSITY"] = "ERROR"
 os.environ["TF_ENABLE_ONEDNN_OPTS"] = "0"
 
+import argparse
+import signal
+import time
+from collections import deque
+from pathlib import Path
+
 
 @contextlib.contextmanager
 def suppress_stderr():
-    """Redirect stderr to /dev/null while mediapipe initialises."""
+    """Redirect stderr to /dev/null while noisy native libs initialise."""
     devnull = os.open(os.devnull, os.O_WRONLY)
     old_stderr = os.dup(2)
     os.dup2(devnull, 2)
@@ -35,15 +47,6 @@ def suppress_stderr():
         os.dup2(old_stderr, 2)
         os.close(old_stderr)
 
-
-from absl import logging as absl_logging
-absl_logging.set_verbosity(absl_logging.ERROR)
-absl_logging.use_python_logging()
-
-import argparse
-import signal
-import time
-from collections import deque
 
 with suppress_stderr():
     import cv2
@@ -74,6 +77,10 @@ from src.pca import PCA
 from src.repetition import count_reps_and_classify_with_confidence, fuse_exercise_labels
 
 
+if absl_logging is not None:
+    absl_logging.set_verbosity(absl_logging.ERROR)
+    absl_logging.use_python_logging()
+
 _shutdown_requested = False
 
 
@@ -97,7 +104,7 @@ def run_live(source: int | str = 0, show_angles: bool = True,
              frame_width: int = 1280, frame_height: int = 720,
              window_width: int = 1600, window_height: int = 900,
              mirror: bool = True):
-    """run the full pipeline on a live webcam or video file.
+    """Run the full pipeline on a webcam or supported video file.
 
     pipeline: video -> skeleton extraction -> normalization -> angles -> classify -> visualize
     """
@@ -119,8 +126,9 @@ def run_live(source: int | str = 0, show_angles: bool = True,
         signal.signal(signal.SIGINT, prev_int)
         return
 
-    cap.set(cv2.CAP_PROP_FRAME_WIDTH, float(max(320, frame_width)))
-    cap.set(cv2.CAP_PROP_FRAME_HEIGHT, float(max(240, frame_height)))
+    if isinstance(source, int):
+        cap.set(cv2.CAP_PROP_FRAME_WIDTH, float(max(320, frame_width)))
+        cap.set(cv2.CAP_PROP_FRAME_HEIGHT, float(max(240, frame_height)))
 
     window_name = "Skeleton Extraction from Video"
     cv2.namedWindow(window_name, cv2.WINDOW_NORMAL | cv2.WINDOW_GUI_EXPANDED)
@@ -146,8 +154,8 @@ def run_live(source: int | str = 0, show_angles: bool = True,
     prev_time = time.time()
     primary_angle_history: list[float] = []
 
-    # sliding-window PCA state
-    WARMUP_SECONDS = 2.0
+    # sliding-window PCA state — keep warmup short so short clips aren't wasted
+    WARMUP_SECONDS = 0.5
     REFIT_INTERVAL_SECONDS = 1.0
     BUFFER_SECONDS = 10.0
     skeleton_buffer: deque = deque()
@@ -164,6 +172,7 @@ def run_live(source: int | str = 0, show_angles: bool = True,
     print("press 'q' to quit, 'r' to reset rep counter, 'f' to toggle fullscreen")
 
     first_frame = True
+
     try:
         while not _shutdown_requested:
             # check if user closed the window via the X button
@@ -175,10 +184,6 @@ def run_live(source: int | str = 0, show_angles: bool = True,
 
             ret, frame = cap.read()
             if not ret:
-                # loop video files
-                if isinstance(source, str):
-                    cap.set(cv2.CAP_PROP_POS_FRAMES, 0)
-                    continue
                 break
 
             if mirror:
@@ -329,7 +334,42 @@ def run_live(source: int | str = 0, show_angles: bool = True,
             atexit.unregister(_force_close_windows)
         except Exception:
             pass
-        print("\nshutdown complete.")
+        _print_session_summary(classifier)
+        print("shutdown complete.")
+
+
+_PRETTY_NAME = {
+    "squat": "squats",
+    "pushup": "push-ups",
+    "jumping_jack": "jumping jacks",
+}
+
+
+def _print_session_summary(classifier) -> None:
+    """Print per-session history and grand totals to stdout."""
+    summary = classifier.finalize()
+    history: list[tuple[str, int]] = summary["history"]
+    totals: dict[str, int] = summary["totals"]
+
+    print("\n" + "=" * 40)
+    print("SESSION SUMMARY")
+    print("=" * 40)
+
+    if history:
+        print("\nHistory:")
+        for ex, reps in history:
+            name = _PRETTY_NAME.get(ex, ex)
+            print(f"  - {reps} {name}")
+    else:
+        print("\nNo exercises detected.")
+
+    nonzero = {ex: n for ex, n in totals.items() if n > 0}
+    if nonzero:
+        print("\nFinal totals:")
+        for ex, n in nonzero.items():
+            print(f"  {_PRETTY_NAME.get(ex, ex)}: {n}")
+        print(f"  grand total: {summary['grand_total']}")
+    print("=" * 40 + "\n")
 
 
 def run_analysis(video_path: str, output_path: str | None = None):
@@ -389,15 +429,7 @@ def main():
     )
     parser.add_argument(
         "--source", type=str, default="0",
-        help="video source: '0' for webcam, or path to video file"
-    )
-    parser.add_argument(
-        "--mode", choices=["live", "analyze"], default="live",
-        help="'live' for real-time detection, 'analyze' for offline processing"
-    )
-    parser.add_argument(
-        "--output", type=str, default=None,
-        help="output path for saving skeleton data (.npy) in analyze mode"
+        help="source: webcam index (for example '0') or path to an .mp4/.mov file"
     )
     parser.add_argument(
         "--no-angles", action="store_true",
@@ -433,29 +465,33 @@ def main():
     )
     args = parser.parse_args()
 
-    # '0' -> int 0 (webcam), anything else stays as a path string
+    # Webcam source if numeric; otherwise validate as .mp4/.mov file.
+    mirror = not args.no_mirror
     try:
         source = int(args.source)
+        if source < 0:
+            parser.error("--source webcam index must be >= 0")
     except ValueError:
-        source = args.source
+        video_path = Path(args.source).expanduser().resolve()
+        if not video_path.exists() or not video_path.is_file():
+            parser.error(f"video file not found: {video_path}")
+        if video_path.suffix.lower() not in {".mp4", ".mov"}:
+            parser.error("only .mp4 and .mov video files are supported")
+        source = str(video_path)
+        # File playback should default to natural orientation (no selfie mirror).
+        mirror = False
 
-    if args.mode == "live":
-        run_live(
-            source=source,
-            show_angles=not args.no_angles,
-            show_plot=not args.no_plot,
-            apply_rotation=args.rotate,
-            frame_width=args.frame_width,
-            frame_height=args.frame_height,
-            window_width=args.window_width,
-            window_height=args.window_height,
-            mirror=not args.no_mirror,
-        )
-    elif args.mode == "analyze":
-        run_analysis(
-            video_path=args.source,
-            output_path=args.output,
-        )
+    run_live(
+        source=source,
+        show_angles=not args.no_angles,
+        show_plot=not args.no_plot,
+        apply_rotation=args.rotate,
+        frame_width=args.frame_width,
+        frame_height=args.frame_height,
+        window_width=args.window_width,
+        window_height=args.window_height,
+        mirror=mirror,
+    )
 
 
 if __name__ == "__main__":

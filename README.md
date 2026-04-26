@@ -77,27 +77,17 @@ This opens your webcam, draws a skeleton overlay on the video, detects the exerc
 python main.py --source path/to/video.mp4
 ```
 
-Video files loop automatically when they reach the end.
-
-### Analyze mode (offline skeleton extraction)
-
-```bash
-python main.py --mode analyze --source path/to/video.mp4 --output skeletons.npy
-```
-
-Extracts all skeletons from a video file and saves them as a NumPy array (`T x 33 x 2`). Also prints the Euclidean distance and cosine similarity between the first and last frame.
+Supported file formats are `.mp4` and `.mov`. Playback stops at the end of the file.
 
 ### All CLI flags
 
 | Flag | Default | Description |
 | ------ | --------- | ------------- |
-| `--source` | `0` (webcam) | Video source: `0` for webcam, or path to a video file |
-| `--mode` | `live` | `live` for real-time detection, `analyze` for offline processing |
-| `--output` | none | Output path for `.npy` skeleton data (analyze mode only) |
+| `--source` | `0` (webcam) | Source: webcam index (for example `0`) or path to `.mp4`/`.mov` video file |
 | `--rotate` | off | Apply Procrustes rotation normalization |
 | `--no-angles` | off | Hide the joint angle overlay |
 | `--no-plot` | off | Hide the angle-vs-time plot |
-| `--no-mirror` | off | Disable selfie mirror (webcam is mirrored by default) |
+| `--no-mirror` | off | Disable selfie mirror (webcam only; video files are shown without mirror) |
 | `--frame-width` | 1280 | Camera capture width |
 | `--frame-height` | 720 | Camera capture height |
 | `--window-width` | 1600 | Initial display window width |

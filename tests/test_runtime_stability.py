@@ -117,6 +117,7 @@ class TestFSMAndTimeBasedLogic:
 
         assert ex_fast == "squat"
         assert ex_slow == "squat"
+        # 3 squat cycles → 3 confirmed reps, regardless of frame rate.
         assert reps_fast == reps_slow == 3
 
     def test_count_reps_from_signal_respects_sample_rate(self) -> None:
