@@ -2,10 +2,9 @@
 
 import numpy as np
 import pytest
-from numpy.typing import NDArray
 
 from src.linalg_utils import center_matrix, flatten_poses, select_n_components
-from src.pca import DEFAULT_VARIANCE_THRESHOLD, PCA, fit_pca, project_poses
+from src.pca import PCA, fit_pca, project_poses
 
 
 RNG_SEED: int = 42

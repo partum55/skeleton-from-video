@@ -5,7 +5,6 @@ real-time exercise detection and repetition counting using mediapipe pose estima
 
 # environment vars must be set BEFORE importing mediapipe / tensorflow
 import os
-import sys
 import atexit
 import contextlib
 

@@ -160,7 +160,6 @@ class TestFindBestFrequency:
         z1 = _make_sinusoid(T=T, true_reps=6)
         omega_hat, _, best_res = find_best_frequency(z1, n_steps=300)
 
-        from src.repetition import build_frequency_grid
         omegas = build_frequency_grid(T, n_steps=300)
         for omega in omegas:
             _, res = fit_frequency(omega, z1)

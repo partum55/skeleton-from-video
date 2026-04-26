@@ -164,7 +164,13 @@ class ExerciseClassifier:
         is_horizontal = torso_vert < 0.5
         pushup_active = is_horizontal and elbow < 140 and knee > 120
 
-        jj_active = shoulder > 100 and knee > 150 and hip > 150 and torso_vert > 0.7
+        jj_active = (
+            shoulder > 100
+            and knee > 150
+            and hip > 140
+            and torso_vert > 0.7
+            and (leg_spread > 1.0 or shoulder > 140)
+        )
 
         if squat_active and not jj_active:
             if pushup_active:
