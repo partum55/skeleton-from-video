@@ -83,37 +83,34 @@ Supported file formats are `.mp4` and `.mov`. Playback stops at the end of the f
 
 You can test the pipeline using the videos provided in the `videos/` folder. Here are the exact commands and their expected results:
 
-**1. Burpees (detected as jumping jacks)**
+**1. Jumping Jacks**
 ```bash
-python main.py --source videos/burpee.MOV
+python main.py --source videos/jumpp.MOV
 ```
 *Expected Result:* 5 jumping jacks
 
-**2. Fast Jumping Jacks**
 ```bash
 python main.py --source videos/jump-fast.MOV
 ```
 *Expected Result:* 5 jumping jacks
 
-**3. Slow Jumping Jacks**
 ```bash
 python main.py --source videos/jump-slow.MP4
 ```
 *Expected Result:* 5 jumping jacks
 
-**4. Jumping Jacks**
 ```bash
 python main.py --source videos/jump.mp4
 ```
 *Expected Result:* 5 jumping jacks
 
-**5. Push-ups**
+**2. Push-ups**
 ```bash
 python main.py --source videos/push.MOV
 ```
 *Expected Result:* 4 push-ups
 
-**6. Squats**
+**3. Squats**
 ```bash
 python main.py --source videos/squats.MOV
 ```
