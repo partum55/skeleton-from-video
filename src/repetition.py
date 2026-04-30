@@ -26,10 +26,12 @@ def fit_frequency(
     omega: float,
     z1: NDArray[np.float64],
 ) -> tuple[NDArray[np.float64], float]:
-    """Solve A^T A w = A^T z1 via lstsq for a single candidate frequency."""
+    """Solve A^T A w = A^T z1 via normal equations for a single candidate frequency."""
     T = len(z1)
     A = build_design_matrix(omega, T)
-    w_hat, _, _, _ = np.linalg.lstsq(A, z1, rcond=None)
+    AtA = A.T @ A
+    Atz = A.T @ z1
+    w_hat = np.linalg.solve(AtA, Atz)
     residual = float(np.linalg.norm(A @ w_hat - z1))
     return w_hat, residual
 

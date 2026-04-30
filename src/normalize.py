@@ -6,6 +6,7 @@ Pipeline:  translate to hip center -> scale by torso length -> rotate via SVD.
 
 import numpy as np
 from numpy.typing import NDArray
+from src.svd import custom_svd
 
 
 _LEFT_SHOULDER: int = 11
@@ -116,7 +117,7 @@ def procrustes_rotation(
     """
     M = s_tilde.T @ r_ref
 
-    U, _, Vt = np.linalg.svd(M)
+    U, _, Vt = custom_svd(M, full_matrices=False)
     V = Vt.T
 
     sign_correction = np.diag([1.0, float(np.linalg.det(V @ U.T))])

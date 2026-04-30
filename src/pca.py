@@ -1,13 +1,15 @@
 """
-PCA via manual SVD (numpy.linalg.svd, no sklearn).
+PCA via custom SVD (no numpy.linalg.svd, no sklearn).
 
-Centre X, do economy SVD, keep k components that retain >= 95% of variance,
+Centre X, do economy SVD via Jacobi eigendecomposition of X^T X,
+keep k components that retain >= 95% of variance,
 project z(t) = V_k^T (s(t) - mu).
 """
 
 import numpy as np
 from numpy.typing import NDArray
 from src.linalg_utils import center_matrix, select_n_components
+from src.svd import custom_svd
 
 
 # Default fraction of variance to retain when selecting k.
@@ -102,8 +104,8 @@ class PCA:
 
         X_centered, mu = center_matrix(X)
 
-        # economy SVD: only compute min(T, d) singular vectors
-        _, s, Vt = np.linalg.svd(X_centered, full_matrices=False)
+        # economy SVD via Jacobi eigendecomposition of X^T X
+        _, s, Vt = custom_svd(X_centered, full_matrices=False)
 
         k = select_n_components(s, self.variance_threshold)
 
