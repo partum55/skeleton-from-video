@@ -1,7 +1,103 @@
-"""Shared linear algebra helpers (no project-internal dependencies)."""
+"""Shared linear algebra helpers, hand-rolled (no numpy.linalg).
+
+Implements from scratch: vector L2 norm, 2x2 determinant, Gaussian
+elimination with partial pivoting, and symmetric eigenvalue computation
+(via Jacobi sweeps, lazily importing src.svd to avoid a cycle).
+"""
 
 import numpy as np
 from numpy.typing import NDArray
+
+
+def vector_norm(x: NDArray[np.float64]) -> float:
+    """Euclidean norm: sqrt(sum_i x_i^2). Replaces np.linalg.norm for vectors."""
+    x = np.asarray(x, dtype=np.float64).ravel()
+    s = 0.0
+    for xi in x:
+        s += float(xi) * float(xi)
+    return float(np.sqrt(s))
+
+
+def frobenius_norm(M: NDArray[np.float64]) -> float:
+    """Frobenius norm: sqrt(sum_ij M_ij^2). Replaces np.linalg.norm(M, 'fro')."""
+    M = np.asarray(M, dtype=np.float64)
+    s = 0.0
+    for v in M.ravel():
+        s += float(v) * float(v)
+    return float(np.sqrt(s))
+
+
+def det_2x2(M: NDArray[np.float64]) -> float:
+    """Determinant of a 2x2 matrix: a*d - b*c. Replaces np.linalg.det for 2x2."""
+    M = np.asarray(M, dtype=np.float64)
+    if M.shape != (2, 2):
+        raise ValueError(f"det_2x2 expects 2x2 matrix, got {M.shape}")
+    return float(M[0, 0] * M[1, 1] - M[0, 1] * M[1, 0])
+
+
+def solve_linear_system(
+    A: NDArray[np.float64],
+    b: NDArray[np.float64],
+) -> NDArray[np.float64]:
+    """Solve A x = b via Gaussian elimination with partial pivoting.
+
+    Replaces np.linalg.solve. A must be square and non-singular.
+    Cost ~ (2/3) n^3 flops; we only call it on small systems (3x3).
+    """
+    A = np.asarray(A, dtype=np.float64).copy()
+    b = np.asarray(b, dtype=np.float64).copy()
+    n = A.shape[0]
+    if A.shape != (n, n):
+        raise ValueError(f"A must be square, got {A.shape}")
+    if b.shape[0] != n:
+        raise ValueError(f"shape mismatch: A is {A.shape}, b is {b.shape}")
+
+    # Build augmented matrix [A | b]
+    M = np.zeros((n, n + 1), dtype=np.float64)
+    M[:, :n] = A
+    M[:, n] = b
+
+    # Forward elimination with partial pivoting
+    for k in range(n):
+        # Pivot: row with largest |M[i, k]| for i >= k
+        pivot = k
+        max_val = abs(M[k, k])
+        for i in range(k + 1, n):
+            if abs(M[i, k]) > max_val:
+                max_val = abs(M[i, k])
+                pivot = i
+        if max_val < 1e-15:
+            raise ValueError("singular matrix in solve_linear_system")
+        if pivot != k:
+            tmp = M[k].copy()
+            M[k] = M[pivot]
+            M[pivot] = tmp
+
+        # Eliminate column k below the pivot
+        for i in range(k + 1, n):
+            factor = M[i, k] / M[k, k]
+            for j in range(k, n + 1):
+                M[i, j] -= factor * M[k, j]
+
+    # Back substitution
+    x = np.zeros(n, dtype=np.float64)
+    for i in range(n - 1, -1, -1):
+        s = M[i, n]
+        for j in range(i + 1, n):
+            s -= M[i, j] * x[j]
+        x[i] = s / M[i, i]
+    return x
+
+
+def eigvals_symmetric(M: NDArray[np.float64]) -> NDArray[np.float64]:
+    """Eigenvalues of a symmetric matrix via Jacobi sweeps, sorted ascending.
+
+    Replaces np.linalg.eigvalsh. Imports src.svd lazily to avoid circular import.
+    """
+    from src.svd import _jacobi_sym_eig
+    M = np.asarray(M, dtype=np.float64)
+    eigenvalues, _ = _jacobi_sym_eig(M)
+    return np.sort(eigenvalues)
 
 
 def center_matrix(

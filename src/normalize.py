@@ -6,6 +6,7 @@ Pipeline:  translate to hip center -> scale by torso length -> rotate via SVD.
 
 import numpy as np
 from numpy.typing import NDArray
+from src.linalg_utils import det_2x2, vector_norm
 from src.svd import custom_svd
 
 
@@ -90,9 +91,9 @@ def compute_torso_length(skeleton: NDArray[np.float64]) -> float:
     """Euclidean distance between shoulder midpoint and hip midpoint.
     Returns 1.0 if degenerate to avoid division by zero.
     """
-    d = float(np.linalg.norm(
+    d = vector_norm(
         compute_shoulder_center(skeleton) - compute_hip_center(skeleton)
-    ))
+    )
     return d if d >= 1e-6 else 1.0
 
 
@@ -120,7 +121,7 @@ def procrustes_rotation(
     U, _, Vt = custom_svd(M, full_matrices=False)
     V = Vt.T
 
-    sign_correction = np.diag([1.0, float(np.linalg.det(V @ U.T))])
+    sign_correction = np.diag([1.0, det_2x2(V @ U.T)])
     R_star: NDArray[np.float64] = V @ sign_correction @ U.T
 
     return R_star

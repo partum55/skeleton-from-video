@@ -175,7 +175,7 @@ def custom_svd(
                 # Orthogonalise against existing U columns
                 if existing.shape[1] > 0:
                     candidate -= existing @ (existing.T @ candidate)
-                n_cand = np.linalg.norm(candidate)
+                n_cand = float(np.sqrt(float(candidate @ candidate)))
                 if n_cand > 1e-10:
                     U[:, col] = candidate / n_cand
                     existing = np.column_stack([existing, U[:, col]])

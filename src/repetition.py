@@ -8,6 +8,7 @@ r = round(omega_hat * T / 2pi).
 
 import numpy as np
 from numpy.typing import NDArray
+from src.linalg_utils import solve_linear_system, vector_norm
 
 
 EXERCISES: tuple[str, ...] = ("squat", "pushup", "jumping_jack")
@@ -31,8 +32,8 @@ def fit_frequency(
     A = build_design_matrix(omega, T)
     AtA = A.T @ A
     Atz = A.T @ z1
-    w_hat = np.linalg.solve(AtA, Atz)
-    residual = float(np.linalg.norm(A @ w_hat - z1))
+    w_hat = solve_linear_system(AtA, Atz)
+    residual = vector_norm(A @ w_hat - z1)
     return w_hat, residual
 
 
@@ -149,7 +150,7 @@ def estimate_pca_confidence(
     if signal_std < 1e-8:
         return 0.0
 
-    quality = 1.0 - float(residual) / (signal_std * np.sqrt(len(signal)) + 1e-8)
+    quality = 1.0 - float(residual) / (signal_std * float(np.sqrt(len(signal))) + 1e-8)
     amp_ratio = amplitude / (signal_std + 1e-8)
     conf = 0.6 * np.clip(quality, 0.0, 1.0) + 0.4 * np.clip(amp_ratio / 2.0, 0.0, 1.0)
     return float(np.clip(conf, 0.0, 1.0))

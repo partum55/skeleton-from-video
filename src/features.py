@@ -3,6 +3,7 @@ feature extraction from skeleton sequences: joint angles, velocity, distance met
 """
 
 import numpy as np
+from src.linalg_utils import vector_norm
 
 # Landmark indices for reference
 _LEFT_SHOULDER = 11
@@ -57,8 +58,8 @@ def compute_angle(a: np.ndarray, b: np.ndarray, c: np.ndarray) -> float:
     """
     u = a - b
     v = c - b
-    norm_u = np.linalg.norm(u)
-    norm_v = np.linalg.norm(v)
+    norm_u = vector_norm(u)
+    norm_v = vector_norm(v)
     if norm_u < 1e-8 or norm_v < 1e-8:
         return 0.0
     cos_theta = np.dot(u, v) / (norm_u * norm_v)
@@ -116,7 +117,7 @@ def compute_body_position_features(skeleton: np.ndarray) -> dict[str, float]:
     
     # Torso vector and length
     torso_vec = shoulder_center - hip_center
-    torso_length = float(np.linalg.norm(torso_vec))
+    torso_length = vector_norm(torso_vec)
     if torso_length < 1e-6:
         torso_length = 1.0
     
@@ -205,7 +206,7 @@ def euclidean_distance(s1: np.ndarray, s2: np.ndarray) -> float:
 
     d(s1, s2) = ||s1 - s2||_2 = sqrt(sum((s1_k - s2_k)^2))
     """
-    return float(np.linalg.norm(s1 - s2))
+    return vector_norm(s1 - s2)
 
 
 def cosine_similarity(s1: np.ndarray, s2: np.ndarray) -> float:
@@ -213,8 +214,8 @@ def cosine_similarity(s1: np.ndarray, s2: np.ndarray) -> float:
 
     sim(s1, s2) = <s1, s2> / (||s1|| * ||s2||)
     """
-    norm1 = np.linalg.norm(s1)
-    norm2 = np.linalg.norm(s2)
+    norm1 = vector_norm(s1)
+    norm2 = vector_norm(s2)
     if norm1 < 1e-8 or norm2 < 1e-8:
         return 0.0
     return float(np.dot(s1, s2) / (norm1 * norm2))

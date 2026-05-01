@@ -74,6 +74,7 @@ from src.classify import ExerciseClassifier
 from src.visualize import draw_skeleton, draw_info_overlay, create_angle_plot
 from src.pca import PCA
 from src.repetition import count_reps_and_classify_with_confidence, fuse_exercise_labels
+from src.linalg_utils import eigvals_symmetric
 
 
 if absl_logging is not None:
@@ -148,7 +149,7 @@ def run_live(source: int | str = 0, show_angles: bool = True,
     A = build_adjacency_matrix()
     L = build_graph_laplacian(A)
     print(f"adjacency matrix shape: {A.shape}, laplacian shape: {L.shape}")
-    print(f"laplacian smallest eigenvalues: {np.sort(np.linalg.eigvalsh(L))[:3]}")
+    print(f"laplacian smallest eigenvalues: {eigvals_symmetric(L)[:3]}")
 
     prev_time = time.time()
     primary_angle_history: list[float] = []
