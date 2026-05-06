@@ -1,7 +1,7 @@
 """
 PCA via custom SVD (no numpy.linalg.svd, no sklearn).
 
-Centre X, do economy SVD via Jacobi eigendecomposition of X^T X,
+Centre X, do economy SVD via power iteration on X^T X,
 keep k components that retain >= 95% of variance,
 project z(t) = V_k^T (s(t) - mu).
 """
@@ -104,7 +104,6 @@ class PCA:
 
         X_centered, mu = center_matrix(X)
 
-        # economy SVD via Jacobi eigendecomposition of X^T X
         _, s, Vt = custom_svd(X_centered, full_matrices=False)
 
         k = select_n_components(s, self.variance_threshold)

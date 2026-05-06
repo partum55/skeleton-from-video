@@ -2,7 +2,8 @@
 
 Implements from scratch: vector L2 norm, 2x2 determinant, Gaussian
 elimination with partial pivoting, and symmetric eigenvalue computation
-(via Jacobi sweeps, lazily importing src.svd to avoid a cycle).
+(via power iteration with deflation, lazily importing src.svd to avoid a
+cycle).
 """
 
 import numpy as np
@@ -90,13 +91,13 @@ def solve_linear_system(
 
 
 def eigvals_symmetric(M: NDArray[np.float64]) -> NDArray[np.float64]:
-    """Eigenvalues of a symmetric matrix via Jacobi sweeps, sorted ascending.
+    """Eigenvalues of a symmetric matrix via power iteration, sorted ascending.
 
     Replaces np.linalg.eigvalsh. Imports src.svd lazily to avoid circular import.
     """
-    from src.svd import _jacobi_sym_eig
+    from src.svd import symmetric_eig_power
     M = np.asarray(M, dtype=np.float64)
-    eigenvalues, _ = _jacobi_sym_eig(M)
+    eigenvalues, _ = symmetric_eig_power(M)
     return np.sort(eigenvalues)
 
 

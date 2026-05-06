@@ -1,187 +1,204 @@
 """
-Custom SVD via Jacobi eigendecomposition of A^T A.
+Custom SVD via power iteration with deflation.
 
-Algorithm (step by step)
-------------------------
-Given A ∈ R^{m×n} with m >= n:
+Algorithm
+---------
+Given A in R^{m x n} with m >= n we want A = U Sigma V^T.
 
-Step 1  Form the symmetric PSD matrix  B = A^T A  ∈ R^{n×n}.
-        Eigenvalues of B are σ_i^2; eigenvectors are the right singular vectors V.
+Step 1.  Form B = A^T A in R^{n x n}.  B is symmetric and positive
+         semi-definite.  Its eigenvalues are sigma_i^2 and its eigenvectors
+         are the right singular vectors v_i of A.
 
-Step 2  Jacobi cyclic sweeps on B.
-        Each sweep visits every off-diagonal pair (i, j) with i < j and applies a
-        Givens rotation G that zeroes out B[i, j]:
+Step 2.  Power iteration finds the dominant eigenpair (lambda_1, v_1) of B:
 
-            B ← G^T B G,   V ← V G
+             v_{k+1} = B v_k / || B v_k ||.
 
-        The Givens angle θ is chosen so that after the rotation B[i,j] = 0:
+         Decomposing v_0 in the eigenbasis of B,
+         v_0 = sum_i alpha_i q_i, gives
 
-            τ = (B[j,j] − B[i,i]) / (2 B[i,j])
-            t = sign(τ) / (|τ| + sqrt(1 + τ^2))   ← tan θ, always |t| ≤ 1
-            c = 1 / sqrt(1 + t^2),   s = t c
+             B^k v_0 = sum_i alpha_i lambda_i^k q_i,
 
-        After enough sweeps, B converges to a diagonal matrix Λ = diag(λ_1, …, λ_n)
-        and V is orthogonal with B_original = V Λ V^T.
+         and after normalisation the term with the largest |lambda_i|
+         dominates.  The error decays geometrically with ratio
+         (lambda_2 / lambda_1)^k.  We monitor the Rayleigh quotient
+         v^T B v as the eigenvalue estimate and stop when it stops moving.
 
-Step 3  Singular values: σ_i = sqrt(max(λ_i, 0)).
-        Sort in descending order; reorder columns of V accordingly.
+Step 3.  Deflate B by subtracting the rank-one piece we just identified:
 
-Step 4  Left singular vectors: U_i = A v_i / σ_i  for σ_i > ε.
-        For numerically zero singular values we fill U with an orthonormal basis
-        (not needed for our use cases; included for interface completeness).
+             B <- B - lambda_1 v_1 v_1^T.
 
-Result: A ≈ U Σ V^T   (exact up to floating-point).
+         The eigenvalue at v_1 becomes 0; all other eigenpairs are unchanged.
+         Power iteration on the deflated matrix produces (lambda_2, v_2),
+         and so on.  Re-orthogonalisation against previously found vectors
+         keeps numerical drift out of the already-computed subspace.
+
+Step 4.  Recover singular values and left singular vectors:
+
+             sigma_i = sqrt(lambda_i),     u_i = A v_i / sigma_i.
+
+         For numerically zero singular values u_i is filled by Gram-Schmidt
+         against a standard basis, so U remains orthonormal.
+
+For wide matrices (m < n) the same algorithm runs on A^T and the result is
+transposed.
 """
 
 import numpy as np
 from numpy.typing import NDArray
 
 
-def _jacobi_sym_eig(
-    B: NDArray[np.float64],
-    tol: float = 1e-12,
-    max_sweeps: int = 150,
-) -> tuple[NDArray[np.float64], NDArray[np.float64]]:
-    """Jacobi cyclic-sweep eigendecomposition of symmetric matrix B.
+_EIG_TOL: float = 1e-12
+_EIG_MAX_ITERS: int = 2000
+_DEFAULT_SEED: int = 0
+_ZERO_THRESHOLD: float = 1e-12
 
-    Returns (eigenvalues, V) such that B = V diag(eigenvalues) V^T.
-    Eigenvalues are NOT sorted here; sorting is done in custom_svd.
+
+def _random_unit_orthogonal(
+    columns: NDArray[np.float64],
+    rng: np.random.Generator,
+) -> NDArray[np.float64]:
+    """Draw a random unit vector orthogonal to the columns of `columns`."""
+    n = columns.shape[0]
+    for _ in range(50):
+        v = rng.standard_normal(n)
+        if columns.shape[1] > 0:
+            v -= columns @ (columns.T @ v)
+        norm = float(np.sqrt(v @ v))
+        if norm > 1e-10:
+            return v / norm
+    raise RuntimeError("failed to draw a vector orthogonal to existing columns")
+
+
+def _orthonormalise(matrix: NDArray[np.float64]) -> NDArray[np.float64]:
+    """Modified Gram-Schmidt orthonormalisation of the columns of `matrix`."""
+    out = matrix.astype(np.float64, copy=True)
+    n_cols = out.shape[1]
+    for j in range(n_cols):
+        v = out[:, j]
+        for i in range(j):
+            v -= float(out[:, i] @ v) * out[:, i]
+        norm = float(np.sqrt(v @ v))
+        if norm > 1e-12:
+            out[:, j] = v / norm
+        else:
+            out[:, j] = 0.0
+    return out
+
+
+def _power_iteration_eigenpair(
+    M: NDArray[np.float64],
+    deflation_basis: NDArray[np.float64],
+    rng: np.random.Generator,
+    tol: float,
+    max_iters: int,
+) -> tuple[float, NDArray[np.float64]]:
+    """Dominant eigenpair of symmetric M via power iteration.
+
+    `deflation_basis` holds eigenvectors already extracted; the iterate is
+    re-orthogonalised against them at every step to prevent drift back into
+    the already-computed subspace.
     """
+    v = _random_unit_orthogonal(deflation_basis, rng)
+    eigenvalue = 0.0
+    for _ in range(max_iters):
+        Mv = M @ v
+        if deflation_basis.shape[1] > 0:
+            Mv -= deflation_basis @ (deflation_basis.T @ Mv)
+        norm_Mv = float(np.sqrt(Mv @ Mv))
+        if norm_Mv < tol:
+            return 0.0, v
+        v_next = Mv / norm_Mv
+        eigenvalue_next = float(v_next @ (M @ v_next))
+        residual = Mv - eigenvalue_next * v
+        residual_norm = float(np.sqrt(residual @ residual))
+        scale = max(abs(eigenvalue_next), 1.0)
+        if residual_norm <= tol * scale:
+            return eigenvalue_next, v_next
+        v, eigenvalue = v_next, eigenvalue_next
+    return eigenvalue, v
+
+
+def symmetric_eig_power(
+    B: NDArray[np.float64],
+    seed: int | None = _DEFAULT_SEED,
+    tol: float = _EIG_TOL,
+    max_iters: int = _EIG_MAX_ITERS,
+) -> tuple[NDArray[np.float64], NDArray[np.float64]]:
+    """Eigendecomposition of symmetric B by power iteration + deflation.
+
+    Returns (eigenvalues, V) such that B ≈ V diag(eigenvalues) V^T,
+    with eigenvalues in descending order of magnitude and V orthonormal.
+    """
+    B = np.asarray(B, dtype=np.float64)
+    if B.ndim != 2 or B.shape[0] != B.shape[1]:
+        raise ValueError(f"B must be square, got shape {B.shape}")
+
     n = B.shape[0]
-    A = B.astype(np.float64, copy=True)
-    V = np.eye(n, dtype=np.float64)
+    M = B.copy()
+    rng = np.random.default_rng(seed)
+    eigenvalues = np.zeros(n, dtype=np.float64)
+    V = np.zeros((n, n), dtype=np.float64)
 
-    for _ in range(max_sweeps):
-        # Off-diagonal Frobenius norm squared — convergence check.
-        # We use the upper triangle only (matrix is symmetric).
-        i_idx, j_idx = np.triu_indices(n, k=1)
-        off_sq = float(np.sum(A[i_idx, j_idx] ** 2))
-        if off_sq < tol ** 2:
-            break
+    for k in range(n):
+        lam, v = _power_iteration_eigenpair(
+            M, V[:, :k], rng, tol=tol, max_iters=max_iters,
+        )
+        eigenvalues[k] = lam
+        V[:, k] = v
+        M -= lam * np.outer(v, v)
+        M = 0.5 * (M + M.T)
 
-        # Cyclic sweep: one pass through all (i, j) pairs with i < j.
-        for i in range(n - 1):
-            for j in range(i + 1, n):
-                a_ij = A[i, j]
-                if abs(a_ij) < 1e-15:
-                    continue  # already zero — skip rotation
-
-                # --- Compute Givens angle ---
-                # We want the rotation that zeroes A[i,j].
-                # τ = cot(2θ) = (A[j,j] - A[i,i]) / (2 A[i,j])
-                tau = (A[j, j] - A[i, i]) / (2.0 * a_ij)
-                # t = tan(θ), choose smaller root for numerical stability
-                t = np.sign(tau) / (abs(tau) + np.sqrt(1.0 + tau * tau))
-                c = 1.0 / np.sqrt(1.0 + t * t)   # cos θ
-                s = t * c                           # sin θ
-
-                # --- Apply G^T A G in-place using numpy row/column ops ---
-                # Update rows i and j of A first (left multiply by G^T)
-                row_i = A[i, :].copy()
-                row_j = A[j, :].copy()
-                A[i, :] = c * row_i - s * row_j
-                A[j, :] = s * row_i + c * row_j
-                # Update columns i and j (right multiply by G)
-                col_i = A[:, i].copy()
-                col_j = A[:, j].copy()
-                A[:, i] = c * col_i - s * col_j
-                A[:, j] = s * col_i + c * col_j
-                # Enforce exact zero and symmetry to prevent floating-point drift
-                A[i, j] = 0.0
-                A[j, i] = 0.0
-
-                # --- Accumulate rotation in V: V <- V G ---
-                v_i = V[:, i].copy()
-                v_j = V[:, j].copy()
-                V[:, i] = c * v_i - s * v_j
-                V[:, j] = s * v_i + c * v_j
-
-    return np.diag(A), V
+    return eigenvalues, V
 
 
 def custom_svd(
     A: NDArray[np.float64],
     full_matrices: bool = False,
+    seed: int | None = _DEFAULT_SEED,
+    tol: float = _EIG_TOL,
+    max_iters: int = _EIG_MAX_ITERS,
 ) -> tuple[NDArray[np.float64], NDArray[np.float64], NDArray[np.float64]]:
-    """Economy SVD of A via eigendecomposition of A^T A.
+    """Economy SVD of A via power iteration on A^T A.
 
-    Returns (U, s, Vt) satisfying  A ≈ U @ diag(s) @ Vt,
-    with s sorted in descending order and columns of U and rows of Vt
-    being the corresponding singular vectors.
-
-    When m < n the computation is done on A^T and the result is transposed.
+    Returns (U, s, Vt) with A ≈ U @ diag(s) @ Vt, s sorted in descending
+    order, columns of U and rows of Vt being the corresponding singular
+    vectors.  For wide matrices (m < n) the computation is done on A^T.
     """
+    del full_matrices  # economy decomposition only; flag kept for API parity
+
     A = np.asarray(A, dtype=np.float64)
     if A.ndim != 2:
         raise ValueError(f"A must be 2-D, got shape {A.shape}")
 
     m, n = A.shape
 
-    # For wide matrices defer to the transpose path.
     if m < n:
-        U, s, Vt = custom_svd(A.T, full_matrices=full_matrices)
+        U, s, Vt = custom_svd(A.T, seed=seed, tol=tol, max_iters=max_iters)
         return Vt.T, s, U.T
 
-    # -----------------------------------------------------------------
-    # Step 1: form B = A^T A  (n×n, symmetric PSD)
-    # -----------------------------------------------------------------
+    rng = np.random.default_rng(seed)
+
     B = A.T @ A
+    eigenvalues, V = symmetric_eig_power(B, seed=seed, tol=tol, max_iters=max_iters)
 
-    # -----------------------------------------------------------------
-    # Step 2: Jacobi eigendecomposition  B = V Λ V^T
-    # -----------------------------------------------------------------
-    eigenvalues, V = _jacobi_sym_eig(B)
-
-    # -----------------------------------------------------------------
-    # Step 3: singular values σ_i = sqrt(λ_i), sort descending
-    # -----------------------------------------------------------------
-    # Clamp tiny negatives caused by floating-point to zero.
     eigenvalues = np.maximum(eigenvalues, 0.0)
     order = np.argsort(eigenvalues)[::-1]
     eigenvalues = eigenvalues[order]
-    V = V[:, order]                   # right singular vectors, columns of V
-    s = np.sqrt(eigenvalues)          # singular values
+    V = V[:, order]
+    s = np.sqrt(eigenvalues)
 
-    # Economy: keep only r = min(m, n) = n components (already the case here).
-    r = n
+    AV = A @ V
+    U = np.empty((m, n), dtype=np.float64)
+    nonzero = s > _ZERO_THRESHOLD
 
-    # -----------------------------------------------------------------
-    # Step 4: left singular vectors  U_i = A v_i / σ_i
-    # -----------------------------------------------------------------
-    AV = A @ V                        # m×r,  columns are A v_i
-    U = np.empty((m, r), dtype=np.float64)
+    if np.any(nonzero):
+        U[:, nonzero] = _orthonormalise(AV[:, nonzero])
 
-    zero_mask = s < 1e-12
-    nonzero_mask = ~zero_mask
+    if not np.all(nonzero):
+        existing = U[:, nonzero] if np.any(nonzero) else np.zeros((m, 0))
+        for col in np.where(~nonzero)[0]:
+            v = _random_unit_orthogonal(existing, rng)
+            U[:, col] = v
+            existing = np.column_stack([existing, v])
 
-    # Nonzero singular values: straightforward normalisation.
-    if np.any(nonzero_mask):
-        U[:, nonzero_mask] = AV[:, nonzero_mask] / s[nonzero_mask]
-
-    # Zero singular values: fill with arbitrary unit vectors orthogonal to the rest.
-    # We use the null space of A^T (columns of U for zero σ come from the left null space).
-    # Simple approach: use standard basis vectors not in the column span.
-    if np.any(zero_mask):
-        zero_cols = np.where(zero_mask)[0]
-        # Gram-Schmidt against already-computed columns of U
-        existing = U[:, nonzero_mask]
-        e_idx = 0
-        for col in zero_cols:
-            # Find a standard basis vector e_k not already in the span.
-            while e_idx < m:
-                candidate = np.zeros(m, dtype=np.float64)
-                candidate[e_idx] = 1.0
-                e_idx += 1
-                # Orthogonalise against existing U columns
-                if existing.shape[1] > 0:
-                    candidate -= existing @ (existing.T @ candidate)
-                n_cand = float(np.sqrt(float(candidate @ candidate)))
-                if n_cand > 1e-10:
-                    U[:, col] = candidate / n_cand
-                    existing = np.column_stack([existing, U[:, col]])
-                    break
-            else:
-                U[:, col] = 0.0
-
-    Vt = V.T                          # right singular vectors as rows
-    return U, s, Vt
+    return U, s, V.T
